@@ -10,7 +10,7 @@ QUIET_COMPILATION=0
 OUT_DIR="$(dirname "${SCRIPT_DIR}")/external/openfoam"
 USAGE="usage: install-openfoam.sh [-h] [-q] [-s] [-j JOBS] [-o DIRECTORY]
 
-Install OpenFOAM-12 for Ubuntu, applying the patch required by hippo.
+Install OpenFOAM-14 for Ubuntu, applying the patch required by hippo.
 
 Note that you will need to install OpenFOAM's requirements separately.
 You can do this by running:
@@ -61,23 +61,27 @@ if [ "${BUILD_JOBS}" = "0" ]; then
     BUILD_JOBS=""
 fi;
 
-OPENFOAM_DIR="${OUT_DIR}/OpenFOAM-12"
-OPENFOAM_REV="9ec94dd57a8d98c3f3422ce9b2156a8b268bbda6"
-THIRDPARTY_DIR="${OUT_DIR}/ThirdParty-12"
-THIRDPARTY_REV="cab725f5e7929e8f5ec35c54edc493a822355235"
+OPENFOAM_DIR="${OUT_DIR}/OpenFOAM-14"
+OPENFOAM_REV="7b05503f98a85be88af930df48623b4d152bfc35"
+THIRDPARTY_DIR="${OUT_DIR}/ThirdParty-14"
+THIRDPARTY_REV="6f75cb6aa1a3d8f1ba768840f9ee535244b4c70a"
 
 # Fetch and patch OpenFOAM
 mkdir -p "${OPENFOAM_DIR}"
 if [ ! -d "${OPENFOAM_DIR}/.git" ]; then
-    git clone https://github.com/OpenFOAM/OpenFOAM-12.git "${OPENFOAM_DIR}"
+    git clone https://github.com/OpenFOAM/OpenFOAM-14.git "${OPENFOAM_DIR}"
 fi
 git -C "${OPENFOAM_DIR}" reset --hard "${OPENFOAM_REV}"
+if ! git -C "${OPENFOAM_DIR}" apply --check "${SCRIPT_DIR}/openfoam.patch"; then
+    >&2 echo "install-openfoam: error: openfoam.patch did not apply cleanly to OpenFOAM-14 (${OPENFOAM_REV})"
+    exit 1
+fi
 git -C "${OPENFOAM_DIR}" apply "${SCRIPT_DIR}/openfoam.patch"
 
 # Set up OpenFOAM
 source "${OPENFOAM_DIR}/etc/bashrc" || true
 
-echo "Hippo installing OpenFOAM-12 with options:"
+echo "Hippo installing OpenFOAM-14 with options:"
 echo "------------------------------------------"
 echo "  WM_ARCH_OPTION:      ${WM_ARCH_OPTION}"
 echo "  WM_COMPILE_OPTION:   ${WM_COMPILE_OPTION}"
@@ -95,7 +99,7 @@ fi
 
 mkdir -p "${THIRDPARTY_DIR}"
 if [ ! -d "${THIRDPARTY_DIR}/.git" ]; then
-    git clone https://github.com/OpenFOAM/ThirdParty-12.git "${THIRDPARTY_DIR}"
+    git clone https://github.com/OpenFOAM/ThirdParty-14.git "${THIRDPARTY_DIR}"
 fi
 git -C "${THIRDPARTY_DIR}" reset --hard "${THIRDPARTY_REV}"
 (

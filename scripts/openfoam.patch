@@ -1,58 +1,28 @@
 diff --git a/src/OpenFOAM/db/IOstreams/Pstreams/UPstream.H b/src/OpenFOAM/db/IOstreams/Pstreams/UPstream.H
-index 3bc4fa20a..e560ba081 100644
+index b9f08e0b..269fddb7 100644
 --- a/src/OpenFOAM/db/IOstreams/Pstreams/UPstream.H
 +++ b/src/OpenFOAM/db/IOstreams/Pstreams/UPstream.H
-@@ -46,9 +46,8 @@ SourceFiles
- #include "NamedEnum.H"
- #include "ListOps.H"
- #include "LIFOStack.H"
--
- // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
--
-+//#include <mpi.h>
- namespace Foam
- {
-
-@@ -58,7 +57,6 @@ namespace Foam
-
- class UPstream
- {
--
- public:
-
-     //- Types of communications
-@@ -369,6 +367,17 @@ public:
+@@ -369,6 +369,7 @@ public:
          //- Initialisation function called from main
          //  Spawns slave processes and initialises inter-communication
          static bool init(int& argc, char**& argv, const bool needsThread);
-+        /*  Maybe the worst but the easiest way to pass the comm through without
-+            changing the build system so it can find mpi.h/spoiling the encapsulation
-+            of mpi in the .C files
-+            - forward declaring doesn't work(?) because it it puts it puts the incomplete type in scope
-+            for functions that need it defined
-+            - AFAIKT mpich MPI_Comm is an int, but openmpi is a pointer to a struct
-+            - could do something horrible via fortran to convert to and from an integer - but no
-+            - Mybe best would be a struct MPI_Wrapp {MPI_Comm comm} then forward declare that but would
-+            prob need to define on moose side too.
-+        */
-+        static bool init(void *comm, const bool needsThread);
-
++        static bool init(void* comm, const bool needsThread);
+ 
          // Non-blocking comms
-
+ 
 diff --git a/src/OpenFOAM/global/argList/argList.C b/src/OpenFOAM/global/argList/argList.C
-index 9c5f42516..0dec89817 100644
+index 6f3d5b57..be434a27 100644
 --- a/src/OpenFOAM/global/argList/argList.C
 +++ b/src/OpenFOAM/global/argList/argList.C
-@@ -578,6 +578,153 @@ Foam::argList::argList
-     parse(checkArgs, checkOpts, initialise);
+@@ -574,6 +574,154 @@ Foam::argList::argList
  }
-
-+/* Everything the same as above - replicated (for now) to make patch cleaner */
+ 
+ 
 +Foam::argList::argList
 +(
 +    int& argc,
 +    char**& argv,
-+    void *comm,
++    void* comm,
 +    bool checkArgs,
 +    bool checkOpts,
 +    const bool initialise
@@ -194,51 +164,44 @@ index 9c5f42516..0dec89817 100644
 +    parse(checkArgs, checkOpts, initialise);
 +}
 +
-
++
++
  Foam::argList::argList
  (
+     const argList& args,
 diff --git a/src/OpenFOAM/global/argList/argList.H b/src/OpenFOAM/global/argList/argList.H
-index 813e4bfbd..ea1302df9 100644
+index 7b504a08..a09833d2 100644
 --- a/src/OpenFOAM/global/argList/argList.H
 +++ b/src/OpenFOAM/global/argList/argList.H
-@@ -90,7 +90,6 @@ SourceFiles
- #include "sigInt.H"
- #include "sigQuit.H"
- #include "sigSegv.H"
--
- // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-
- namespace Foam
-@@ -200,6 +199,16 @@ public:
-             bool checkOpts = true,
+@@ -201,6 +201,16 @@ public:
              bool initialise = true
          );
-+        /* Alternative that accepts exteranl communicator i.e. from MOOSE */
+ 
 +        argList
 +        (
 +            int& argc,
 +            char**& argv,
-+            void *comm,
++            void* comm,
 +            bool checkArgs = true,
 +            bool checkOpts = true,
 +            bool initialise = true
 +        );
-
++
          //- Construct copy with new options
          argList
+         (
 diff --git a/src/OpenFOAM/global/argList/parRun.H b/src/OpenFOAM/global/argList/parRun.H
-index e8de3d053..56735790a 100644
+index e8de3d05..6ea92e55 100644
 --- a/src/OpenFOAM/global/argList/parRun.H
 +++ b/src/OpenFOAM/global/argList/parRun.H
-@@ -64,6 +64,18 @@ public:
+@@ -64,6 +64,17 @@ public:
          }
      }
-
-+    /* Overload to call the (overloaded in turn) Pstream::init
-+       for when mpi already initialised */
-+    void runPar(void *external_comm, const bool needsThread)
+ 
++    void runPar(void* external_comm, const bool needsThread)
 +    {
 +        RunPar = true;
++
 +        if (!Pstream::init(external_comm, needsThread))
 +        {
 +            Info<< "Failed to start parallel run" << endl;
@@ -250,14 +213,15 @@ index e8de3d053..56735790a 100644
      {
          RunPar = true;
 diff --git a/src/Pstream/dummy/UPstream.C b/src/Pstream/dummy/UPstream.C
-index f0553baee..95a67396d 100644
+index f0553bae..257a1082 100644
 --- a/src/Pstream/dummy/UPstream.C
 +++ b/src/Pstream/dummy/UPstream.C
-@@ -42,6 +42,15 @@ bool Foam::UPstream::init(int& argc, char**& argv, const bool needsThread)
-     return false;
+@@ -43,6 +43,17 @@ bool Foam::UPstream::init(int& argc, char**& argv, const bool needsThread)
  }
-
-+bool Foam::UPstream::init(void *, bool needsThread) {
+ 
+ 
++bool Foam::UPstream::init(void*, const bool)
++{
 +    FatalErrorInFunction
 +        << "Trying to use the dummy Pstream library." << nl
 +        << "This dummy library cannot be used in parallel mode"
@@ -266,58 +230,54 @@ index f0553baee..95a67396d 100644
 +    return false;
 +}
 +
-
++
  void Foam::UPstream::exit(int errnum)
  {
+     NotImplemented;
 diff --git a/src/Pstream/mpi/UPstream.C b/src/Pstream/mpi/UPstream.C
-index 03433b398..dc9e39c0b 100644
+index 88c34ea8..93b7459e 100644
 --- a/src/Pstream/mpi/UPstream.C
 +++ b/src/Pstream/mpi/UPstream.C
-@@ -50,6 +50,7 @@ License
+@@ -50,6 +50,8 @@ License
  // valid parallel options vary between implementations, but flag common ones.
  // if they are not removed by MPI_Init(), the subsequent argument processing
  // will notice that they are wrong
-+#include <unistd.h>
++static bool _external_mpi = false;
++
  void Foam::UPstream::addValidParOptions(HashTable<string>& validParOptions)
  {
      validParOptions.insert("np", "");
-@@ -59,6 +60,102 @@ void Foam::UPstream::addValidParOptions(HashTable<string>& validParOptions)
-     validParOptions.insert("p4yourname", "hostname");
-     validParOptions.insert("machinefile", "machine file");
+@@ -61,6 +63,88 @@ void Foam::UPstream::addValidParOptions(HashTable<string>& validParOptions)
  }
-+static bool _external_mpi = false;
-+/* Alternative init if mpi is already intialised in Moose*/
-+bool Foam::UPstream::init(void *comm_ptr, const bool needsThread)
+ 
+ 
++
++bool Foam::UPstream::init(void* comm_ptr, const bool needsThread)
 +{
 +    _external_mpi = true;
 +    MPI_Comm comm = *((MPI_Comm*)comm_ptr);
-+    int rank,size;
-+    MPI_Comm_rank(comm,&rank);
-+    MPI_Comm_size(comm,&size);
 +
 +    int flag;
 +    MPI_Initialized(&flag);
-+    if (!flag) {
++    if (!flag)
++    {
 +        FatalErrorInFunction
-+            << "MPI not initialised: call init( int& argc, char**& argv, const bool needsThread)\n"
++            << "MPI not initialised: call init(int& argc, char**& argv, const bool needsThread)" << nl
 +            << Foam::abort(Foam::FatalError);
 +    }
 +
-+    /*
-+      Assuming that mpi was intialised with mpi_init_thread
-+      if it isn't the returned value is implimentation defined (sigh)
-+      Can't find a function to check this but moose does use init_thread
-+    */
-+    int provided_thread_support;
-+    if (needsThread) {
++    int provided_thread_support = MPI_THREAD_SINGLE;
++    if (needsThread)
++    {
 +        MPI_Query_thread(&provided_thread_support);
-+        if (provided_thread_support != MPI_THREAD_MULTIPLE) {
-+        FatalErrorInFunction
-+            << "MPI implimentation does not provide required level of threading support (MPI_THREAD_MULTIPLE)"
-+            << Foam::abort(Foam::FatalError);
++        if (provided_thread_support != MPI_THREAD_MULTIPLE)
++        {
++            FatalErrorInFunction
++                << "MPI implementation does not provide required level of threading support (MPI_THREAD_MULTIPLE)"
++                << Foam::abort(Foam::FatalError);
 +        }
 +    }
-+    /* Just a copy and paste from below - no refactor to keep patch clean */
++
 +    int myGlobalRank;
 +    MPI_Comm_rank(comm, &myGlobalRank);
 +    MPI_Comm_split
@@ -328,16 +288,10 @@ index 03433b398..dc9e39c0b 100644
 +        &PstreamGlobals::MPI_COMM_FOAM
 +    );
 +
-+    MPI_Comm_rank(PstreamGlobals::MPI_COMM_FOAM,&rank);
-+    MPI_Comm_size(PstreamGlobals::MPI_COMM_FOAM,&size);
-+
 +    int numprocs;
 +    MPI_Comm_size(PstreamGlobals::MPI_COMM_FOAM, &numprocs);
 +    int myRank;
 +    MPI_Comm_rank(PstreamGlobals::MPI_COMM_FOAM, &myRank);
-+
-+    int send = 1, recv = 0;
-+    MPI_Allreduce(&send, &recv, 1, MPI_INT, MPI_SUM,  PstreamGlobals::MPI_COMM_FOAM);
 +
 +    if (debug)
 +    {
@@ -353,8 +307,6 @@ index 03433b398..dc9e39c0b 100644
 +            << Foam::abort(FatalError);
 +    }
 +
-+
-+    // Initialise parallel structure
 +    setParRun(numprocs, provided_thread_support == MPI_THREAD_MULTIPLE);
 +
 +    #ifndef SGIMPI
@@ -379,18 +331,19 @@ index 03433b398..dc9e39c0b 100644
 +    #endif
 +
 +    return true;
-+
 +}
-
-
++
  bool Foam::UPstream::init(int& argc, char**& argv, const bool needsThread)
-@@ -185,8 +282,10 @@ void Foam::UPstream::exit(int errnum)
-
+ {
+     // MPI_Init(&argc, &argv);
+@@ -185,8 +269,11 @@ void Foam::UPstream::exit(int errnum)
+ 
      if (errnum == 0)
      {
 -        MPI_Finalize();
 -        ::exit(errnum);
-+        if (!_external_mpi) {
++        if (!_external_mpi)
++        {
 +            MPI_Finalize();
 +            ::exit(errnum);
 +        }
