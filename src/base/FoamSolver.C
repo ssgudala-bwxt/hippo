@@ -138,7 +138,6 @@ FoamSolver::run()
     solver.momentumPredictor();
     solver.thermophysicalPredictor();
     solver.pressureCorrector();
-    solver.postCorrector();
   }
 
   solver.postSolve();
