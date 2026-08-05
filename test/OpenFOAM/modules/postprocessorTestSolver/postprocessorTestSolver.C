@@ -32,7 +32,6 @@ License
 #include "addToRunTimeSelectionTable.H"
 #include "scalar.H"
 #include "volFieldsFwd.H"
-#include "volMesh.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 

@@ -1,6 +1,5 @@
 EXE_INC = \
     -I$(FOAM_MODULES)/fluid/lnInclude \
-    -I$(FOAM_MODULES)/fluidSolver/lnInclude \
     -I$(FOAM_MODULES)/basicFluidSolver/lnInclude \
     -I$(FOAM_MODULES)/isothermalFluid/lnInclude \
     -I$(LIB_SRC)/physicalProperties/lnInclude \
@@ -17,7 +16,6 @@ EXE_INC = \
 
 LIB_LIBS = \
     -lfluid \
-    -lfluidSolver \
     -lbasicFluidSolver \
     -lisothermalFluid \
     -lfluidThermophysicalModels \
