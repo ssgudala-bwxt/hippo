@@ -81,7 +81,7 @@ public:
 
   Foam::polyPatch const & patch(const int patch_id) const
   {
-    return _mesh->boundary()[patch_id].patch();
+    return _mesh->boundary()[patch_id].poly();
   }
 
   Foam::pointField const & points() const { return _mesh->points(); }
