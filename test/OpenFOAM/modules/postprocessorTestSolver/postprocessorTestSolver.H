@@ -39,7 +39,7 @@ SourceFiles
 #include "volFields.H"
 #include "surfaceFields.H"
 #include "fluidThermophysicalTransportModel.H"
-#include "fluidThermo.H
+#include "fluidThermo.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -70,6 +70,9 @@ public:
   virtual ~postprocessorTestSolver();
 
   // Member Functions
+  
+  //- Return the current maximum time-step for stable solution
+  virtual scalar maxDeltaT() const;
 
   //- Called at the start of the time-step, before the PIMPLE loop
   virtual void preSolve();

@@ -58,6 +58,12 @@ Foam::solvers::postprocessorTestSolver::~postprocessorTestSolver() {}
 
 // * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * * //
 
+Foam::scalar
+Foam::solvers::postprocessorTestSolver::maxDeltaT() const
+{
+  return vGreat;
+}
+
 void
 Foam::solvers::postprocessorTestSolver::preSolve()
 {
@@ -81,24 +87,8 @@ Foam::solvers::postprocessorTestSolver::moveMesh()
 void
 Foam::solvers::postprocessorTestSolver::thermophysicalPredictor()
 {
-  // To set temperature for testing, internal energy must be set. The
-  // thermo_.correct() call calculates Temperature.
-
-  // Get e and Cv
-  volScalarField & h = thermo_.he();
-  const volScalarField & Cp = thermo_.Cp();
-
-  // Set e to Cv*(xy + yz + xz)t which gives a non-uniform be first order value of wall heat flux at
-  // all boundaries.
-  // auto x_mesh =
-  volScalarField t(IOobject("0", "0", mesh_),
-                   mesh_,
-                   dimTemperature,
-                   time().userTimeValue() * mesh_.C().component(0)->internalField(),
-                   time().userTimeValue() * mesh_.C().component(0)->boundaryField());
-  h = Cp * t;
-
-  thermo_.correct();
+  // Simplified postprocessor test - just apply models
+  fvModels().correct();
 }
 
 void
