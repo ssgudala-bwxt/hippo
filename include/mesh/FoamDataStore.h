@@ -183,11 +183,11 @@ struct is_geometric_field : std::false_type
 {
 };
 
-// only for debug, can add back in later
-// template <typename Type, template <class> class Patch, typename Mesh>
-// struct is_geometric_field<Foam::GeometricField<Type, Patch, Mesh>> : std::true_type
-// {
-// };
+// OF14: GeometricField has 3 template parameters: Type, GeoMesh, PrimitiveField
+template <typename Type, typename GeoMesh, typename PrimitiveField>
+struct is_geometric_field<Foam::GeometricField<Type, GeoMesh, PrimitiveField>> : std::true_type
+{
+};
 
 template <typename T>
 void
@@ -335,15 +335,14 @@ dataStore(std::ostream & stream, Foam::fvMesh & mesh, void * context)
   storeFields<Foam::surfaceTensorField, false>(stream, mesh, dbg_field_list);
   storeFields<Foam::surfaceSymmTensorField, false>(stream, mesh, dbg_field_list);
 
-  // TODO: OF14 refactored volMesh/surfaceMesh types - need updating
-  // storeFields<Foam::DimensionedField<Foam::scalar, Foam::volMesh>, true>(
-  //     stream, mesh, dbg_field_list);
-  // storeFields<Foam::DimensionedField<Foam::vector, Foam::volMesh>, true>(
-  //     stream, mesh, dbg_field_list);
-  // storeFields<Foam::DimensionedField<Foam::scalar, Foam::surfaceMesh>, true>(
-  //     stream, mesh, dbg_field_list);
-  // storeFields<Foam::DimensionedField<Foam::vector, Foam::surfaceMesh>, true>(
-  //     stream, mesh, dbg_field_list);
+  storeFields<Foam::DimensionedField<Foam::scalar, Foam::volMesh>, true>(
+      stream, mesh, dbg_field_list);
+  storeFields<Foam::DimensionedField<Foam::vector, Foam::volMesh>, true>(
+      stream, mesh, dbg_field_list);
+  storeFields<Foam::DimensionedField<Foam::scalar, Foam::surfaceMesh>, true>(
+      stream, mesh, dbg_field_list);
+  storeFields<Foam::DimensionedField<Foam::vector, Foam::surfaceMesh>, true>(
+      stream, mesh, dbg_field_list);
 
   storeFields<Foam::uniformDimensionedScalarField, true>(stream, mesh, dbg_field_list);
 
@@ -370,11 +369,10 @@ dataLoad(std::istream & stream, Foam::fvMesh & mesh, void * context)
   loadFields<Foam::surfaceTensorField>(stream, mesh);
   loadFields<Foam::surfaceSymmTensorField>(stream, mesh);
 
-  // TODO: OF14 refactored volMesh/surfaceMesh types - need updating
-  // loadFields<Foam::DimensionedField<Foam::scalar, Foam::volMesh>>(stream, mesh);
-  // loadFields<Foam::DimensionedField<Foam::vector, Foam::volMesh>>(stream, mesh);
-  // loadFields<Foam::DimensionedField<Foam::scalar, Foam::surfaceMesh>>(stream, mesh);
-  // loadFields<Foam::DimensionedField<Foam::vector, Foam::surfaceMesh>>(stream, mesh);
+  loadFields<Foam::DimensionedField<Foam::scalar, Foam::volMesh>>(stream, mesh);
+  loadFields<Foam::DimensionedField<Foam::vector, Foam::volMesh>>(stream, mesh);
+  loadFields<Foam::DimensionedField<Foam::scalar, Foam::surfaceMesh>>(stream, mesh);
+  loadFields<Foam::DimensionedField<Foam::vector, Foam::surfaceMesh>>(stream, mesh);
 
   loadFields<Foam::uniformDimensionedScalarField>(stream, mesh);
 }
