@@ -24,7 +24,6 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "DimensionedField.H"
-#include "dimensionSets.H"
 #include "dimensionedScalar.H"
 #include "dimensionedVector.H"
 #include "fvMesh.H"

@@ -24,7 +24,6 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "dimensionSet.H"
-#include "dimensionSets.H"
 #include "dimensionedType.H"
 #include "laplacianTestSolver.H"
 #include "fvcSurfaceIntegrate.H"

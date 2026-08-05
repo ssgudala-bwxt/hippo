@@ -24,7 +24,6 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "dimensionSet.H"
-#include "dimensionSets.H"
 #include "dimensionedType.H"
 #include "fvmDdt.H"
 #include "odeTestSolver.H"
