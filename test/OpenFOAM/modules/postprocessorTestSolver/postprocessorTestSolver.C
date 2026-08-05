@@ -50,7 +50,7 @@ addToRunTimeSelectionTable(solver, postprocessorTestSolver, fvMesh);
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 // Solver based on solid.C module
-Foam::solvers::postprocessorTestSolver::postprocessorTestSolver(fvMesh & mesh) : fluid(mesh) {}
+Foam::solvers::postprocessorTestSolver::postprocessorTestSolver(fvMesh & mesh) : solver(mesh) {}
 
 // * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * //
 

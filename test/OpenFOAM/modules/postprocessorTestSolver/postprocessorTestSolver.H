@@ -35,7 +35,11 @@ SourceFiles
 
 #pragma once
 
-#include "fluid.H"
+#include "solver.H"
+#include "volFields.H"
+#include "surfaceFields.H"
+#include "fluidThermophysicalTransportModel.H"
+#include "fluidThermo.H
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -48,7 +52,7 @@ namespace solvers
                           Class postprocessorTestSolver Declaration
 \*---------------------------------------------------------------------------*/
 
-class postprocessorTestSolver : public fluid
+class postprocessorTestSolver : public solver
 {
 
 public:
