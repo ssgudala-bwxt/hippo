@@ -111,12 +111,8 @@ Foam::solvers::transferTestSolver::moveMesh()
 {
   if (pimple.firstIter() || pimple.moveMeshOuterCorrectors())
   {
-    if (!mesh_.mover().solidBody())
-    {
-      FatalErrorInFunction << "Region " << name() << " of type " << type()
-                           << " does not support non-solid body mesh motion" << exit(FatalError);
-    }
-
+    // OF14: fvMeshMover no longer has solidBody() method
+    // Just attempt mesh motion for test purposes
     mesh_.move();
   }
 }
@@ -171,6 +167,26 @@ Foam::solvers::transferTestSolver::postCorrector()
 
 void
 Foam::solvers::transferTestSolver::postSolve()
+{
+}
+
+void
+Foam::solvers::transferTestSolver::momentumTransportPredictor()
+{
+}
+
+void
+Foam::solvers::transferTestSolver::thermophysicalTransportPredictor()
+{
+}
+
+void
+Foam::solvers::transferTestSolver::momentumTransportCorrector()
+{
+}
+
+void
+Foam::solvers::transferTestSolver::thermophysicalTransportCorrector()
 {
 }
 

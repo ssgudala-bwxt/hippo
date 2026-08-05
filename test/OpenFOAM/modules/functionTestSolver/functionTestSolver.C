@@ -103,12 +103,8 @@ Foam::solvers::functionTestSolver::moveMesh()
 {
   if (pimple.firstIter() || pimple.moveMeshOuterCorrectors())
   {
-    if (!mesh_.mover().solidBody())
-    {
-      FatalErrorInFunction << "Region " << name() << " of type " << type()
-                           << " does not support non-solid body mesh motion" << exit(FatalError);
-    }
-
+    // OF14: fvMeshMover no longer has solidBody() method
+    // Just attempt mesh motion for test purposes
     mesh_.move();
   }
 }
@@ -123,6 +119,26 @@ Foam::solvers::functionTestSolver::thermophysicalPredictor()
   // compute time derivative will be 0 on the first step (even if this is stupid)
   // and 1 on all others
   dTdt_ = fvc::ddt(T_);
+}
+
+void
+Foam::solvers::transferTestSolver::momentumTransportPredictor()
+{
+}
+
+void
+Foam::solvers::transferTestSolver::thermophysicalTransportPredictor()
+{
+}
+
+void
+Foam::solvers::transferTestSolver::momentumTransportCorrector()
+{
+}
+
+void
+Foam::solvers::transferTestSolver::thermophysicalTransportCorrector()
+{
 }
 
 // ************************************************************************* //

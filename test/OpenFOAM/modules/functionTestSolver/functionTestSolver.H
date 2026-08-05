@@ -132,6 +132,18 @@ public:
   //- Called after the PIMPLE loop at the end of the time-step
   virtual void postSolve() {};
 
+  //- Momentum transport predictor (OF14 new pure virtual)
+  virtual void momentumTransportPredictor();
+
+  //- Thermophysical transport predictor (OF14 new pure virtual)
+  virtual void thermophysicalTransportPredictor();
+
+  //- Momentum transport corrector (OF14 new pure virtual)
+  virtual void momentumTransportCorrector();
+  
+  //- Thermophysical transport corrector (OF14 new pure virtual)
+  virtual void thermophysicalTransportCorrector();
+
   // Member Operators
 
   //- Disallow default bitwise assignment
