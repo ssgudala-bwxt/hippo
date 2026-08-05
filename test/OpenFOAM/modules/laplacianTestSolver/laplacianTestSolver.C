@@ -130,22 +130,22 @@ Foam::solvers::laplacianTestSolver::thermophysicalPredictor()
 }
 
 void
-Foam::solvers::transferTestSolver::momentumTransportPredictor()
+Foam::solvers::laplacianTestSolver::momentumTransportPredictor()
 {
 }
 
 void
-Foam::solvers::transferTestSolver::thermophysicalTransportPredictor()
+Foam::solvers::laplacianTestSolver::thermophysicalTransportPredictor()
 {
 }
 
 void
-Foam::solvers::transferTestSolver::momentumTransportCorrector()
+Foam::solvers::laplacianTestSolver::momentumTransportCorrector()
 {
 }
 
 void
-Foam::solvers::transferTestSolver::thermophysicalTransportCorrector()
+Foam::solvers::laplacianTestSolver::thermophysicalTransportCorrector()
 {
 }
 

@@ -161,22 +161,22 @@ Foam::solvers::bcTestSolver::postSolve()
 }
 
 void
-Foam::solvers::transferTestSolver::momentumTransportPredictor()
+Foam::solvers::bcTestSolver::momentumTransportPredictor()
 {
 }
 
 void
-Foam::solvers::transferTestSolver::thermophysicalTransportPredictor()
+Foam::solvers::bcTestSolver::thermophysicalTransportPredictor()
 {
 }
 
 void
-Foam::solvers::transferTestSolver::momentumTransportCorrector()
+Foam::solvers::bcTestSolver::momentumTransportCorrector()
 {
 }
 
 void
-Foam::solvers::transferTestSolver::thermophysicalTransportCorrector()
+Foam::solvers::bcTestSolver::thermophysicalTransportCorrector()
 {
 }
 
