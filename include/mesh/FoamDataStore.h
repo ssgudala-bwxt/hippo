@@ -183,10 +183,11 @@ struct is_geometric_field : std::false_type
 {
 };
 
-template <typename Type, template <class> class Patch, typename Mesh>
-struct is_geometric_field<Foam::GeometricField<Type, Patch, Mesh>> : std::true_type
-{
-};
+// only for debug, can add back in later
+// template <typename Type, template <class> class Patch, typename Mesh>
+// struct is_geometric_field<Foam::GeometricField<Type, Patch, Mesh>> : std::true_type
+// {
+// };
 
 template <typename T>
 void
