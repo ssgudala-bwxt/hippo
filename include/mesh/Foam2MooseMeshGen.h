@@ -74,14 +74,14 @@ public:
 
   int patchId(const std::string & name) const
   {
-    auto id = _mesh->BoundaryMesh().findIndex(name);
+    auto id = _mesh->boundaryMesh().findIndex(name);
     assert(id != -1 && "Patch name does not exist");
     return id;
   }
 
   Foam::polyPatch const & patch(const int patch_id) const
   {
-    return _mesh->BoundaryMesh()[patch_id];
+    return _mesh->boundaryMesh()[patch_id];
   }
 
   Foam::pointField const & points() const { return _mesh->points(); }

@@ -334,14 +334,15 @@ dataStore(std::ostream & stream, Foam::fvMesh & mesh, void * context)
   storeFields<Foam::surfaceTensorField, false>(stream, mesh, dbg_field_list);
   storeFields<Foam::surfaceSymmTensorField, false>(stream, mesh, dbg_field_list);
 
-  storeFields<Foam::DimensionedField<Foam::scalar, Foam::volMesh>, true>(
-      stream, mesh, dbg_field_list);
-  storeFields<Foam::DimensionedField<Foam::vector, Foam::volMesh>, true>(
-      stream, mesh, dbg_field_list);
-  storeFields<Foam::DimensionedField<Foam::scalar, Foam::surfaceMesh>, true>(
-      stream, mesh, dbg_field_list);
-  storeFields<Foam::DimensionedField<Foam::vector, Foam::surfaceMesh>, true>(
-      stream, mesh, dbg_field_list);
+  // TODO: OF14 refactored volMesh/surfaceMesh types - need updating
+  // storeFields<Foam::DimensionedField<Foam::scalar, Foam::volMesh>, true>(
+  //     stream, mesh, dbg_field_list);
+  // storeFields<Foam::DimensionedField<Foam::vector, Foam::volMesh>, true>(
+  //     stream, mesh, dbg_field_list);
+  // storeFields<Foam::DimensionedField<Foam::scalar, Foam::surfaceMesh>, true>(
+  //     stream, mesh, dbg_field_list);
+  // storeFields<Foam::DimensionedField<Foam::vector, Foam::surfaceMesh>, true>(
+  //     stream, mesh, dbg_field_list);
 
   storeFields<Foam::uniformDimensionedScalarField, true>(stream, mesh, dbg_field_list);
 
@@ -368,10 +369,11 @@ dataLoad(std::istream & stream, Foam::fvMesh & mesh, void * context)
   loadFields<Foam::surfaceTensorField>(stream, mesh);
   loadFields<Foam::surfaceSymmTensorField>(stream, mesh);
 
-  loadFields<Foam::DimensionedField<Foam::scalar, Foam::volMesh>>(stream, mesh);
-  loadFields<Foam::DimensionedField<Foam::vector, Foam::volMesh>>(stream, mesh);
-  loadFields<Foam::DimensionedField<Foam::scalar, Foam::surfaceMesh>>(stream, mesh);
-  loadFields<Foam::DimensionedField<Foam::vector, Foam::surfaceMesh>>(stream, mesh);
+  // TODO: OF14 refactored volMesh/surfaceMesh types - need updating
+  // loadFields<Foam::DimensionedField<Foam::scalar, Foam::volMesh>>(stream, mesh);
+  // loadFields<Foam::DimensionedField<Foam::vector, Foam::volMesh>>(stream, mesh);
+  // loadFields<Foam::DimensionedField<Foam::scalar, Foam::surfaceMesh>>(stream, mesh);
+  // loadFields<Foam::DimensionedField<Foam::vector, Foam::surfaceMesh>>(stream, mesh);
 
   loadFields<Foam::uniformDimensionedScalarField>(stream, mesh);
 }
