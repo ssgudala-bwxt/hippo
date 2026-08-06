@@ -128,16 +128,62 @@ FoamSolver::run()
   // TODO: replace std::cout with MOOSE output or a dependency-injected stream.
   std::cout << "Time = " << time.userTimeName() << "\n" << std::endl;
 
-  // PIMPLE corrector loop
+// PIMPLE corrector loop - matches foamRun.C from OF-14 (7b05503f98a85be88af930df48623b4d152bfc35)
   while (pimple.loop())
   {
-    solver.moveMesh();
-    solver.motionCorrector();
-    solver.fvModels().correct();
+    if (solver.pimple.flow())
+    {
+      solver.moveMesh();
+      solver.motionCorrector();
+    }
+
+    if (solver.pimple.models())
+    {
+      solver.fvModels().correct();
+    }
+
     solver.prePredictor();
-    solver.momentumPredictor();
-    solver.thermophysicalPredictor();
-    solver.pressureCorrector();
+
+    if (solver.pimple.predictTransport())
+    {
+      if (solver.pimple.flow())
+      {
+        solver.momentumTransportPredictor();
+      }
+
+      if (solver.pimple.thermophysics())
+      {
+        solver.thermophysicalTransportPredictor();
+      }
+    }
+
+    if (solver.pimple.flow())
+    {
+      solver.momentumPredictor();
+    }
+
+    if (solver.pimple.thermophysics())
+    {
+      solver.thermophysicalPredictor();
+    }
+
+    if (solver.pimple.flow())
+    {
+      solver.pressureCorrector();
+    }
+
+    if (solver.pimple.correctTransport())
+    {
+      if (solver.pimple.flow())
+      {
+        solver.momentumTransportCorrector();
+      }
+
+      if (solver.pimple.thermophysics())
+      {
+        solver.thermophysicalTransportCorrector();
+      }
+    }    
   }
 
   solver.postSolve();
