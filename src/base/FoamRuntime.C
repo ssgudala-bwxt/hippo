@@ -59,13 +59,15 @@ make_arg_list(cArgs & argv, MPI_Comm const & comm)
 
 FoamRuntime::FoamRuntime(const std::string & case_dir, MPI_Comm const & comm)
   : _argv(make_foam_init_args(checkValidCaseDir(case_dir), comm)),
+    _comm(comm),
     _runtime(Foam::Time::controlDictName, make_arg_list(_argv, comm))
 {
 }
 
 FoamRuntime::FoamRuntime(const FoamRuntime & rt)
   : _argv(rt._argv),
-    _runtime(Foam::Time::controlDictName, make_arg_list(_argv, Foam::PstreamGlobals::MPI_COMM_FOAM))
+    _comm(rt._comm),
+    _runtime(Foam::Time::controlDictName, make_arg_list(_argv, rt._comm))
 {
 }
 

@@ -42,7 +42,7 @@ FoamMesh::FoamMesh(InputParameters const & params)
     _foam_runtime(params.get<std::string>("case"), _communicator.get()),
     _foam_mesh(declareRecoverableData<Foam::fvMesh>("foam_mesh",
                                                     Foam::IOobject(Foam::fvMesh::defaultRegion,
-                                                                   _foam_runtime.runTime().name(),
+                                                                   _foam_runtime.runTime().timeName(),
                                                                    _foam_runtime.runTime(),
                                                                    Foam::IOobject::MUST_READ)))
 {

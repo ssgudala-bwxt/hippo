@@ -209,15 +209,10 @@ removeOldTime(Foam::fvMesh & mesh, T & field)
 
   if (scheme == "Euler")
   {
-    // Only geometric fields have a base field
-    if constexpr (is_geometric_field<T>::value)
-    {
-      // otbf is set in the setBase functions of the OldTimeField. This is mirrored here
-      // in order to null it.
-      auto & otbf = const_cast<typename T::Base::OldTime &>(Foam::OldTimeBaseFieldType<T>()(field));
-      otbf.clearOldTimes();
-      otbf.nullOldestTime();
-    }
+    // clearOldTimes() is available in both Foundation and ESI.
+    // Foundation additionally exposed OldTimeBaseFieldType / nullOldestTime; those
+    // private internals do not exist in ESI OpenFOAM-v2606, so we only call
+    // clearOldTimes() here which is the public API available on both branches.
     field.clearOldTimes();
   }
   else
@@ -244,8 +239,10 @@ loadFields(std::istream & stream, Foam::fvMesh & mesh)
     dataLoadField<T>(stream, mesh);
   }
 
-  for (auto & field : mesh.curFields<T>())
+  // ESI uses lookupClass<T>() instead of Foundation's curFields<T>().
+  for (auto & [key, field_ptr] : mesh.lookupClass<T>())
   {
+    T & field = *field_ptr;
     // Remove fields that haven't been stored. Important for subcycling to prevent the old
     // fields which haven't been stored being used on the first time step.
     if (mesh.time().timeIndex() == 0)
@@ -265,7 +262,7 @@ dataStore(std::ostream & stream, const Foam::Time & time, void * context)
 {
   auto timeIndex = time.timeIndex();
   auto deltaT = time.deltaTValue();
-  auto timeValue = time.userTimeValue();
+  auto timeValue = time.value();
 
   storeHelper(stream, timeIndex, context);
   storeHelper(stream, deltaT, context);
@@ -283,7 +280,7 @@ dataLoad(std::istream & stream, Foam::Time & time, void * context)
   loadHelper(stream, deltaT, context);
   loadHelper(stream, timeValue, context);
 
-  time.setDeltaTNoAdjust(deltaT);
+  time.setDeltaT(deltaT, false);
   // This ensures that the delta0 variable is internally updated before
   // the step allowing variable deltaT to be used
   time++;

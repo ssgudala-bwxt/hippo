@@ -49,7 +49,7 @@ FoamVariableField::transferVariable()
     size_t patch_count = _mesh->getPatchCount(subdomain);
     size_t patch_offset = _mesh->getPatchOffset(subdomain);
 
-    auto & var = foam_mesh.boundary()[subdomain].lookupPatchField<Foam::volScalarField, double>(
+    auto & var = foam_mesh.boundary()[subdomain].lookupPatchField<Foam::volScalarField>(
         _foam_variable);
     for (size_t j = 0; j < patch_count; ++j)
     {

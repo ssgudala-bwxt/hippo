@@ -1,17 +1,14 @@
 #include "FoamSolver.h"
+#include "HippoSolver.h"
 #include "MooseError.h"
 
 #include <IOdictionary.H>
 #include <OpenFOAM/db/functionObjects/functionObjectList/functionObjectList.H>
 #include <Time.H>
-#include <fixedGradientFvPatchFields.H>
-#include <functionObjects/field/wallHeatFlux/wallHeatFlux.H>
 #include <functional>
-#include <fvPatchField.H>
 #include <iostream>
 #include <optional>
 #include <ostream>
-#include <pimpleSingleRegionControl.H>
 #include <scalarField.H>
 #include <unistd.h>
 #include <volFieldsFwd.H>
@@ -33,38 +30,36 @@ namespace Hippo
 namespace
 {
 /**
- * This was copied (with some minor adjustments) from
- * 'applications/solvers/foamRun/setDeltaT.C' OpenFOAM-12 revision
- * 9ec94dd57a8d98c3f3422ce9b2156a8b268bbda6.
+ * Adapted from 'applications/solvers/foamRun/setDeltaT.C' (Foundation v12).
+ * In ESI OpenFOAM there is no unified Foam::solver class; this free function
+ * drives the same logic using the HippoSolver interface.
  */
 void
-adjustDeltaT(Foam::Time & runTime, const Foam::solver & solver)
+adjustDeltaT(Foam::Time & runTime, const HippoSolver & solver)
 {
-  // Update the time-step limited by the solver maxDeltaT
   if (runTime.controlDict().lookupOrDefault("adjustTimeStep", false) && solver.transient())
   {
-    const Foam::scalar deltaT = std::min(solver.maxDeltaT(), runTime.functionObjects().maxDeltaT());
+    const Foam::scalar deltaT =
+        std::min(solver.maxDeltaT(), Foam::scalar(Foam::VGREAT));
 
     if (deltaT < Foam::rootVGreat)
     {
-      runTime.setDeltaT(std::min(Foam::solver::deltaTFactor * runTime.deltaTValue(), deltaT));
+      // ESI: setDeltaT(value, adjust) — pass adjust=true so adjustDeltaT()
+      // (which calls functionObjects adjustTimeStep()) is also triggered.
+      runTime.setDeltaT(
+          std::min(1.2 * runTime.deltaTValue(), deltaT));
       std::cout << "deltaT = " << runTime.deltaTValue() << std::endl;
     }
   }
 }
 
-/**
- * This was copied (with some minor adjustments) from
- * 'applications/solvers/foamRun/setDeltaT.C' OpenFOAM-12 revision
- * 9ec94dd57a8d98c3f3422ce9b2156a8b268bbda6.
- */
 void
-setDeltaT(Foam::Time & runTime, const Foam::solver & solver)
+setDeltaT(Foam::Time & runTime, const HippoSolver & solver)
 {
-  if (runTime.timeIndex() == 0 && runTime.controlDict().lookupOrDefault("adjustTimeStep", false) &&
-      solver.transient())
+  if (runTime.timeIndex() == 0 &&
+      runTime.controlDict().lookupOrDefault("adjustTimeStep", false) && solver.transient())
   {
-    const Foam::scalar deltaT = std::min(solver.maxDeltaT(), runTime.functionObjects().maxDeltaT());
+    const Foam::scalar deltaT = solver.maxDeltaT();
 
     if (deltaT < Foam::rootVGreat)
     {
@@ -74,7 +69,7 @@ setDeltaT(Foam::Time & runTime, const Foam::solver & solver)
 }
 
 /**
- * Returns the mooseDeltaT function object if it exists
+ * Returns the mooseDeltaT function object if it exists.
  */
 std::optional<std::reference_wrapper<Foam::functionObjects::mooseDeltaT>>
 findMooseDeltaT(Foam::Time & time)
@@ -91,13 +86,12 @@ findMooseDeltaT(Foam::Time & time)
 } // namespace
 
 /**
- * This was copied from 'applications/solvers/foamRun/foamRun.C' OpenFOAM-12
- * revision 9ec94dd57a8d98c3f3422ce9b2156a8b268bbda6. Modifications made:
- *   - We already have a solver, mesh, and runtime, so the construction of them
- * was removed.
- *   - The outer pimple-loop was removed so we're only running one timestep at a
- * time.
- *   - Some changes to the logging.
+ * Run one time step.
+ *
+ * Adapted from 'applications/solvers/foamRun/foamRun.C' (Foundation v12).
+ * In ESI OpenFOAM, solvers are standalone applications with their own PIMPLE
+ * loop; hippo requires users to provide a HippoSolver subclass that implements
+ * the field equations via `solve()`.
  */
 void
 FoamSolver::run()
@@ -109,38 +103,22 @@ FoamSolver::run()
   auto & time = runTime();
   auto & solver = *_solver;
 
-  // Create the outer PIMPLE loop and control structure
-  Foam::pimpleSingleRegionControl pimple(solver.pimple);
-
   // Set the initial time-step
   setDeltaT(time, solver);
 
   // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-  // Update PIMPLE outer-loop parameters if changed
-  pimple.read();
   solver.preSolve();
 
   // Adjust the time-step according to the solver maxDeltaT
   adjustDeltaT(time, solver);
-  time++;
+  ++time;
 
   // TODO: replace std::cout with MOOSE output or a dependency-injected stream.
-  std::cout << "Time = " << time.userTimeName() << "\n" << std::endl;
+  std::cout << "Time = " << time.timeName() << "\n" << std::endl;
 
-  // PIMPLE corrector loop
-  while (pimple.loop())
-  {
-    solver.moveMesh();
-    solver.motionCorrector();
-    solver.fvModels().correct();
-    solver.prePredictor();
-    solver.momentumPredictor();
-    solver.thermophysicalPredictor();
-    solver.pressureCorrector();
-    solver.postCorrector();
-  }
-
+  solver.moveMesh();
+  solver.solve();
   solver.postSolve();
 
   time.write();
@@ -158,74 +136,65 @@ FoamSolver::patchSize(int patch_id)
   {
     return 0;
   }
-  auto & mesh = _solver->mesh;
+  auto & mesh = _solver->mesh();
   return mesh.boundary()[patch_id].size();
 }
 
 void
 FoamSolver::preSolve()
 {
-  _solver->pimple.readIfModified();
   _solver->preSolve();
 }
 
 Foam::scalar
 FoamSolver::computeDeltaT()
 {
-  // This code has been adapted from OpenFOAM's adjustDeltaT to determine the time-step that
-  // OpenFOAM will use on the next time step so MOOSE can predict it.
-  Foam::scalar deltaT =
-      std::min(_solver->maxDeltaT(), _solver->runTime.functionObjects().maxDeltaT());
+  // Determine the time-step that OpenFOAM will use on the next time step so
+  // MOOSE can predict it.
+  Foam::scalar deltaT = _solver->maxDeltaT();
 
   if (deltaT < Foam::rootVGreat)
   {
-    /*
-    When adjustableRunTime writeControl is used, `Foam::Time` calls `adjustDeltaT`
-    to modify the time step so the time step falls on the write interval exactly.
-    - We must therefore also call adjustDeltaT
-    - However, it is a protected member of Foam::Time so, we must call it indirectly
-      through public member function setDeltaT and retrieve its value
-    - We must then reset the original value as the time step is not formally set until
-     `FoamSolver::run`
-    */
+    // ESI: setDeltaT(value, adjust=true) triggers adjustDeltaT() internally,
+    // which may call functionObjects' adjustTimeStep(). We probe the result then
+    // restore the original value.
 
     // 1. Store initial value
-    Foam::scalar deltaT0 = _solver->runTime.deltaTValue();
-    // 2. Run setDeltaT
-    runTime().setDeltaT(
-        std::min(Foam::solver::deltaTFactor * _solver->runTime.deltaTValue(), deltaT));
-    // 3. Retrieve value
-    deltaT = _solver->runTime.deltaTValue();
-    // 4. Reset initial value without adjustment
-    runTime().setDeltaTNoAdjust(deltaT0);
+    Foam::scalar deltaT0 = runTime().deltaTValue();
+    // 2. Apply tentative setDeltaT
+    runTime().setDeltaT(std::min(1.2 * runTime().deltaTValue(), deltaT));
+    // 3. Retrieve adjusted value
+    deltaT = runTime().deltaTValue();
+    // 4. Reset without calling adjustDeltaT()
+    runTime().setDeltaT(deltaT0, false);
 
     return deltaT;
   }
-  return _solver->runTime.deltaTValue();
+  return runTime().deltaTValue();
 }
 
 bool
 FoamSolver::isDeltaTAdjustable() const
 {
-  return _solver->runTime.controlDict().lookupOrDefault("adjustTimeStep", false);
+  return _solver->runTime().controlDict().lookupOrDefault("adjustTimeStep", false);
 }
 
 void
 FoamSolver::setDeltaTAdjustable(const bool adjustable)
 {
-  const_cast<Foam::IOdictionary &>(_solver->runTime.controlDict())
+  const_cast<Foam::IOdictionary &>(
+      static_cast<const Foam::IOdictionary &>(_solver->runTime().controlDict()))
       .set("adjustTimeStep", adjustable);
 }
 
 void
 FoamSolver::appendDeltaTFunctionObject(const Foam::scalar & dt)
 {
-  // We call setDeltaT to ensure the readDict of the functionObjectsList has been called.
-  // This clears the list, so we want to append mooseDeltaT after it has been cleared.
-  runTime().setDeltaT(getTimeDelta());
+  // Call setDeltaT to ensure the functionObjectList dict has been read/cleared.
+  runTime().setDeltaT(getTimeDelta(), false);
 
   // Do not recreate function object if it exists. It seems MOOSE calls
-  // computeInitialDT twice
+  // computeInitialDT twice.
   if (findMooseDeltaT(runTime()).has_value())
     return;
 

@@ -2,6 +2,7 @@
 #include "FoamMesh.h"
 #include "FoamProblem.h"
 #include "FoamSolver.h"
+#include "HippoSolver.h"
 #include "hippoUtils.h"
 
 #include "Attributes.h"
@@ -11,7 +12,6 @@
 #include "InputParameters.h"
 #include "VariadicTable.h"
 
-#include <finiteVolume/solver/solver.H>
 #include <word.H>
 #include <fvMesh.H>
 #include <libmesh/enum_order.h>
@@ -33,10 +33,8 @@ FoamProblem::validParams()
 FoamProblem::FoamProblem(InputParameters const & params)
   : ExternalProblem(params),
     _foam_mesh(dynamic_cast<FoamMesh *>(&this->ExternalProblem::mesh())),
-    _solver(Foam::solver::New(_foam_mesh->fvMesh().time().controlDict().lookupOrDefault<Foam::word>(
-                                  "solver", "fluid"),
-                              _foam_mesh->fvMesh())
-                .ptr()),
+    _hippo_solver(nullptr),
+    _solver(nullptr),
     _foam_variables(),
     _foam_bcs(),
     _foam_postprocessor()
@@ -45,9 +43,21 @@ FoamProblem::FoamProblem(InputParameters const & params)
 }
 
 void
+FoamProblem::registerHippoSolver(std::unique_ptr<Hippo::HippoSolver> hippo_solver)
+{
+  _hippo_solver = std::move(hippo_solver);
+  _solver = Hippo::FoamSolver(_hippo_solver.get());
+}
+
+void
 FoamProblem::initialSetup()
 {
   ExternalProblem::initialSetup();
+
+  if (!_hippo_solver)
+    mooseError("FoamProblem: no HippoSolver has been registered. "
+               "Call registerHippoSolver() with a concrete HippoSolver subclass "
+               "before the simulation starts.");
 
   // Get FoamVariables created by the action AddFoamVariableAction
   TheWarehouse::Query query_vars = theWarehouse().query().condition<AttribSystem>("FoamVariable");

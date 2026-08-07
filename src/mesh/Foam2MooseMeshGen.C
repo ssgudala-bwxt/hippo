@@ -249,11 +249,11 @@ getLocalFaceInfo(T const & mesh_to_global_map,
 std::unique_ptr<Foam::labelIOList>
 getLocalGlobalMap(const Foam::fvMesh & mesh)
 {
-  Foam::typeIOobject<Foam::labelIOList> addrHeader("pointProcAddressing",
-                                                   mesh.facesInstance() / mesh.meshSubDir,
-                                                   mesh,
-                                                   Foam::IOobject::MUST_READ);
-  if (!addrHeader.headerOk())
+  Foam::IOobject addrHeader("pointProcAddressing",
+                            mesh.facesInstance() / mesh.meshSubDir,
+                            mesh,
+                            Foam::IOobject::MUST_READ);
+  if (!addrHeader.typeHeaderOk<Foam::labelIOList>(true))
   {
     mooseError("Failed to read pointProcAddressing\n");
   }

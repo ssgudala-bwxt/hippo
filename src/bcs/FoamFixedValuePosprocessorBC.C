@@ -22,7 +22,7 @@ FoamFixedValuePostprocessorBC::imposeBoundaryCondition()
   for (auto subdomain : subdomains)
   {
     // Get underlying field from OpenFOAM boundary patch
-    auto & foam_var = _mesh->getBCField<Foam::volScalarField, double>(subdomain, _foam_variable);
+    auto & foam_var = _mesh->getBCField<Foam::volScalarField>(subdomain, _foam_variable);
 
     std::fill(foam_var.begin(), foam_var.end(), _pp_value);
   }

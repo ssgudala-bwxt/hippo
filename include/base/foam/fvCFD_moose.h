@@ -11,7 +11,6 @@
 
 #define namespaceFoam
 // Foam2MooseMeshGen.h
-#include <distributionMapBase.H>
 #include <fvMesh.H>
 
 // Foam2MooseMeshGen.C
@@ -21,9 +20,8 @@
 #include <fvMesh.H>
 #include <polyPatch.H>
 
-// FoamSolver.h
+// HippoSolver.h (ESI: user-provided abstract solver base)
 #include <scalar.H>
-#include <solver.H>
 
 // FoamRuntime.h
 #include <Time.H>
@@ -46,7 +44,7 @@
 
 // FoamSideIntegratedFunctionObject.h
 #include <functionObject.H>
-#include <functionObjects/field/wallHeatFlux/wallHeatFlux.H>
-#include <functionObjects/field/wallShearStress/wallShearStress.H>
+#include <wallHeatFlux.H>
+#include <wallShearStress.H>
 
 #undef NotImplemented

@@ -44,10 +44,10 @@ FoamDiffusionFluxBC::imposeBoundaryCondition()
 
     // Get the gradient associated with the field
     auto & foam_gradient =
-        _mesh->getGradientBCField<Foam::volScalarField, double>(subdomain, _foam_variable);
+        _mesh->getGradientBCField<Foam::volScalarField>(subdomain, _foam_variable);
     assert(grad_array.size() == static_cast<size_t>(foam_gradient.size()));
 
-    auto & coeff = foam_mesh.boundary()[subdomain].lookupPatchField<Foam::volScalarField, double>(
+    auto & coeff = foam_mesh.boundary()[subdomain].lookupPatchField<Foam::volScalarField>(
         _diffusivity);
 
     assert(foam_gradient.size() == coeff.size());

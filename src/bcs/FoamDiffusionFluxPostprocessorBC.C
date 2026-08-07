@@ -36,11 +36,11 @@ FoamDiffusionFluxPostprocessorBC::imposeBoundaryCondition()
     const auto & boundary = foam_mesh.boundary()[subdomain];
     // Get underlying field from OpenFOAM boundary patch.
     auto & foam_gradient =
-        _mesh->getGradientBCField<Foam::volScalarField, double>(subdomain, _foam_variable);
+        _mesh->getGradientBCField<Foam::volScalarField>(subdomain, _foam_variable);
 
     // Get the underlying diffusivity field
     const auto & coeff =
-        foam_mesh.boundary()[subdomain].lookupPatchField<Foam::volScalarField, double>(
+        foam_mesh.boundary()[subdomain].lookupPatchField<Foam::volScalarField>(
             _diffusivity);
 
     // Calculate the bulk value of the diffusivity coefficient

@@ -29,7 +29,7 @@ FoamFixedValueBC::imposeBoundaryCondition()
     std::vector<Real> && var_array = getMooseVariableArray(subdomain);
 
     // Get underlying field from OpenFOAM boundary patch
-    auto & foam_var = _mesh->getBCField<Foam::volScalarField, double>(subdomain, _foam_variable);
+    auto & foam_var = _mesh->getBCField<Foam::volScalarField>(subdomain, _foam_variable);
 
     assert(var_array.size() == static_cast<std::size_t>(foam_var.size()));
 

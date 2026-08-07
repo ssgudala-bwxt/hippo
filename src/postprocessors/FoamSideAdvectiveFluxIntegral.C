@@ -36,11 +36,11 @@ FoamSideAdvectiveFluxIntegral::compute()
   for (auto & boundary : _boundary)
   {
     auto & var_array =
-        _foam_mesh->boundary()[boundary].lookupPatchField<Foam::volScalarField, double>(
+        _foam_mesh->boundary()[boundary].lookupPatchField<Foam::volScalarField>(
             _foam_scalar);
 
     auto & vel_array =
-        _foam_mesh->boundary()[boundary].lookupPatchField<Foam::volVectorField, double>(
+        _foam_mesh->boundary()[boundary].lookupPatchField<Foam::volVectorField>(
             _advection_velocity);
 
     auto & areas = _foam_mesh->boundary()[boundary].magSf();

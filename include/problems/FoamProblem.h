@@ -3,6 +3,7 @@
 #include "FoamMesh.h"
 #include "FoamPostprocessorBase.h"
 #include "FoamSolver.h"
+#include "HippoSolver.h"
 #include "FoamVariableField.h"
 #include "FoamBCBase.h"
 
@@ -36,6 +37,14 @@ public:
 
   Hippo::FoamSolver & solver() { return _solver; }
 
+  /**
+   * Register a user-supplied HippoSolver subclass with this problem.
+   * Must be called before the simulation starts (e.g. in initialSetup of a
+   * derived class or from a hippo Action).
+   * The problem takes ownership of the solver.
+   */
+  void registerHippoSolver(std::unique_ptr<Hippo::HippoSolver> hippo_solver);
+
 protected:
   // check FoamVariables and print summarising table
   void verifyFoamVariables();
@@ -47,6 +56,7 @@ protected:
   void verifyFoamPostprocessors();
 
   FoamMesh * _foam_mesh = nullptr;
+  std::unique_ptr<Hippo::HippoSolver> _hippo_solver;
   Hippo::FoamSolver _solver;
 
   std::vector<FoamVariableField *> _foam_variables;

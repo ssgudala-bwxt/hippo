@@ -18,6 +18,7 @@ public:
 
 private:
   cArgs _argv;
+  MPI_Comm _comm; // stored to allow copy construction
   Foam::Time _runtime;
 };
 

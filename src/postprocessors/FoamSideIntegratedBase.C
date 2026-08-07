@@ -39,7 +39,7 @@ FoamSideIntegratedBase::integrateValue(const std::string & variable)
     {
       // get vector data associated with the boundary
       auto & vec_data =
-          _foam_mesh->boundary()[boundary].lookupPatchField<Foam::volVectorField, double>(variable);
+          _foam_mesh->boundary()[boundary].lookupPatchField<Foam::volVectorField>(variable);
 
       // get the component specified in parameters and get the
       // component of the vector in that direction
@@ -57,7 +57,7 @@ FoamSideIntegratedBase::integrateValue(const std::string & variable)
     else
     {
       var_array =
-          _foam_mesh->boundary()[boundary].lookupPatchField<Foam::volScalarField, double>(variable);
+          _foam_mesh->boundary()[boundary].lookupPatchField<Foam::volScalarField>(variable);
     }
 
     // Integrate

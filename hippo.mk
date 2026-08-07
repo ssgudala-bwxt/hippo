@@ -25,6 +25,7 @@ ADDITIONAL_INCLUDES := \
     -isystem $(FOAM_INCLUDE_ROOT)/physicalProperties/lnInclude \
     -isystem $(FOAM_INCLUDE_ROOT)/thermophysicalModels/basic/lnInclude \
     -isystem $(FOAM_INCLUDE_ROOT)/OSspecific/POSIX/lnInclude \
+    -isystem $(FOAM_INCLUDE_ROOT)/functionObjects/field/lnInclude \
     $(ADDITIONAL_INCLUDES)
 
 

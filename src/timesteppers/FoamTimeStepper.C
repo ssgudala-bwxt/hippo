@@ -1,11 +1,9 @@
 #include "FoamProblem.h"
 #include "FoamTimeStepper.h"
-#include <pimpleSingleRegionControl.H>
 
 #include <scalar.H>
 #include <TimeStepper.h>
 #include <Transient.h>
-#include <solver.H>
 
 registerMooseObject("hippoApp", FoamTimeStepper);
 

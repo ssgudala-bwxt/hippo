@@ -5,7 +5,7 @@ FoamFile {
     object          controlDict;
 }
 
-solver fluid;
+// solver      fluid;  // Foundation OpenFOAM-12 only; not used in ESI OpenFOAM-v2606
 
 startFrom startTime;
 
