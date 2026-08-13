@@ -607,10 +607,182 @@ All `OpenFOAM-12` path references in `apptainer/hippo-dev.def` and `apptainer/hi
 
 ---
 
+## 21. `FoamSolverAdapter` — bridging ESI `Foam::solver` modules to `HippoSolver`
+
+### The problem
+
+`HippoSolver` (item 1 above) is hippo's own abstract interface, introduced because
+ESI has no unified `Foam::solver` base usable across every field-equation
+implementation the way Foundation's `Foam::solver::New()` was. However, ESI
+*does* still ship a family of `Foam::solver` subclasses selected by the
+controlDict `solver` entry and instantiated via
+`Foam::solver::New(name, mesh)` (e.g. `solid`, `fluid`, and hippo's own test
+modules `transferTestSolver`, `bcTestSolver`, `laplacianTestSolver`,
+`odeTestSolver`, `functionTestSolver`, `postprocessorTestSolver`). Every
+existing hippo test case was written against this pattern and only ever calls
+`FoamProblem` — none of them call `FoamProblem::registerHippoSolver()`
+explicitly. Without a bridge, `FoamProblem::initialSetup()` would always
+error with `no HippoSolver has been registered`.
+
+### Fix — `include/base/FoamSolverAdapter.h` (new) and `src/problems/FoamProblem.C`
+
+`FoamSolverAdapter` wraps an owned `Foam::solver*` and implements the
+`HippoSolver` interface by forwarding to the ESI solver's own PIMPLE-phase
+hooks, replicating the loop `foamRun` itself runs:
+
+```cpp
+void solve() override
+{
+  auto & pimple = _foam_solver->pimple;
+  while (pimple.loop())
+  {
+    _foam_solver->prePredictor();
+    _foam_solver->momentumPredictor();
+    _foam_solver->thermophysicalPredictor();
+    _foam_solver->pressureCorrector();
+    _foam_solver->postCorrector();
+  }
+  _foam_solver->motionCorrector();
+}
+```
+
+`FoamSolverAdapter::New(mesh)` reads the controlDict `solver` entry and calls
+`Foam::solver::New(name, mesh)` to build the concrete instance.
+
+`FoamProblem::initialSetup()` now auto-creates this adapter whenever no
+`HippoSolver` was explicitly registered **and** `Problem.solve` is `true`:
+
+```cpp
+if (!_hippo_solver && parameters().get<bool>("solve"))
+  registerHippoSolver(Hippo::FoamSolverAdapter::New(_foam_mesh->mesh()));
+```
+
+When `Problem.solve = false` (mesh/field-inspection-only cases, see item 22),
+no solver is required or created at all — `externalSolve()` never calls into
+it. Explicit `registerHippoSolver()` calls (for real HippoSolver subclasses
+supplied by an application) still take priority and skip auto-creation.
+
+This one change makes every existing hippo test's `controlDict solver <name>;`
+entry work unmodified, as long as `<name>` is a real ESI (or hippo test
+module) `Foam::solver` subclass.
+
+---
+
+## 22. Test suite: adapting `test/tests/` cases from Foundation to ESI
+
+The hippo test suite predates this migration and was written entirely against
+Foundation OpenFOAM-12/14 conventions. Three distinct categories of test case
+needed changes to run against ESI v2606 (via the `FoamSolverAdapter`
+auto-registration described above):
+
+### 22.1 Mesh-coupling-only tests using `solver fluid;`
+
+`test/tests/mesh/{quadrilateral,triangular,polygonal}` and
+`test/tests/multiapps/unsteady_heat_conduction_in_infinite_system` only ever
+couple hippo to a single OpenFOAM field, `T`, via `FoamDiffusionFluxBC` /
+`FoamVariableField`. Their Foundation-era controlDicts specified
+`application foamRun; solver fluid;` with a `heRhoThermo` `physicalProperties`
+and `U`, `p`, `p_rgh`, `rho` fields — a full compressible-flow setup that is
+massive overkill for what the test actually exercises, and which depends on
+ESI solver-module libraries (`libfluid.so` etc.) that may not exist in every
+ESI install (see 22.3 below).
+
+Since these tests never touch momentum/pressure/turbulence, they were
+retargeted onto hippo's own `transferTestSolver` ESI `Foam::solver` module
+(`test/OpenFOAM/modules/transferTestSolver`), which only creates a `T` field
+via `solidThermo`:
+
+- `system/controlDict`: `solver fluid;` → `solver transferTestSolver;`
+  (and the now-unused `application foamRun;` line removed, matching the
+  already-ESI-native `test/tests/variables/foam_variable` test)
+- `constant/physicalProperties`: `thermoType.type` changed from `heRhoThermo`
+  (fluid, needs `mu`) to `heSolidThermo` / `transport constIsoSolid` /
+  `thermo eConst` / `energy sensibleInternalEnergy` (solid, matches
+  `solidThermo::New(mesh)` used by `transferTestSolver`), keeping the same
+  `kappa` (thermal conductivity) and thermodynamic values.
+- Removed `0/U`, `0/p`, `0/p_rgh`, `0/rho` and `constant/momentumTransport` —
+  none of these fields/dicts are read by `transferTestSolver`.
+- `0/T` boundary conditions (`fixedGradient`, `zeroGradient`) are unchanged;
+  `transferTestSolver` uses a plain `volScalarField` for `T` just like the
+  `fluid` module did.
+
+### 22.2 Full-CFD tests (`buoyantFoam` / `buoyantPimpleFoam` applications)
+
+`test/tests/timesteppers/{foam_tstep_insert,foam_timestepper_sets_foam_dt,
+foam_controlled_tstep_insert}/buoyantCavity`,
+`test/tests/multiapps/temperature_set_on_openfoam_boundary/buoyantCavity`,
+`test/tests/fixed-point/{heated_plate_converge,flow_over_heated_plate,
+restart_heated_plate}/fluid-openfoam`,
+`test/tests/multiapps/flow_over_heated_plate/fluid-openfoam`, and
+`test/tests/multiapps/simplified_heat_exchanger/fluid-{top,bottom}-openfoam`
+genuinely need a full buoyancy-driven, compressible, turbulent flow solve
+(`U`, `p`, `p_rgh`, `T`, turbulence fields all present). Their Foundation
+controlDicts only had an `application buoyantFoam;` / `application
+buoyantPimpleFoam;` entry and **no `solver` entry at all** — Foundation ran
+these as standalone application binaries, a concept that doesn't exist in
+`Foam::solver::New()`'s runtime-selection model.
+
+ESI's `fluid` solver module (`applications/solvers/modules/fluid`) is the
+direct functional successor to Foundation's `buoyantFoam`/`buoyantPimpleFoam`
+(density-varying, buoyant, turbulent, compressible flow — steady vs.
+transient behaviour is controlled by `PIMPLE`/`SIMPLE` sub-dict settings, not
+by a separate binary). Fix applied to all of the above:
+
+- `application buoyantFoam;` / `application buoyantPimpleFoam;` →
+  `application foamRun;\n\nsolver          fluid;`
+- `constant/thermophysicalProperties` → `constant/physicalProperties`
+  (content byte-for-byte identical except the `FoamFile.object` header field —
+  ESI v2606 uses the `physicalProperties` name for this dictionary)
+- `constant/turbulenceProperties` → `constant/momentumTransport` (same:
+  content unchanged, only the `FoamFile.object` field updated)
+
+Two cases (`test/tests/timesteppers/{foam_adjustable_run_time,
+foam_controlled_tstep_cfl_insert}/fluid-openfoam` and
+`test/tests/multiapps/shell_tube_heat_exchanger/fluid_{inner,outer}`) already
+had `solver fluid;` from a previous edit but still used the old
+`thermophysicalProperties`/`turbulenceProperties` dictionary names; these were
+renamed the same way for consistency, and their leftover
+`application buoyantFoam;` lines (harmless but stale — hippo bypasses the
+`foamRun` binary's own dispatch logic and calls `Foam::solver::New()`
+directly) were normalised to `application foamRun;`.
+
+`test/tests/timesteppers/foam_controlled_tstep_cfl_insert/test.py` also
+shells out to the real `foamRun -case fluid-openfoam` binary to
+cross-validate hippo's internally-driven time steps against a native run;
+this depends on the controlDict `solver` entry exactly as hippo's own
+`FoamSolverAdapter` does, so the same rename keeps both code paths consistent.
+
+### 22.3 Tests still dependent on the completeness of the user's ESI install
+
+`test/tests/bcs/mass_flow_rate` uses `test/OpenFOAM/modules/postprocessorTestSolver`,
+which subclasses ESI's `fluid` solver module directly (`#include "fluid.H"`).
+`test/OpenFOAM/foam_modules.mk` already only builds this module when
+`$FOAM_LIBBIN/libfluid.so`, `libfluidSolver.so`, `libisothermalFluid.so`, and
+`libcompressibleMomentumTransportModels.so` are all present — i.e. when the
+user's own ESI `Allwmake` successfully built the `fluid` solver-module family.
+If those libraries are missing (as observed on the system's partial
+build), `postprocessorTestSolver` — and hence `mass_flow_rate` — is skipped.
+This is an ESI install-completeness issue, not a hippo defect; no further
+hippo-side change is needed once the ESI install's solver modules are fully
+built.
+
+### 22.4 Mesh-only tests with no solver at all
+
+`test/tests/mesh/cube_slice/test_{1..10}` read a mesh/fields produced by the
+standalone `icoFoam` **application** (`application icoFoam;`, no `solver`
+entry — again, a case Foundation ran externally, not through hippo). These
+tests all set `Problem.solve = false`, meaning `FoamProblem::externalSolve()`
+never calls into any solver. `FoamProblem::initialSetup()` was updated (see
+item 21) to skip `FoamSolverAdapter` auto-creation entirely when
+`solve = false`, so these cases no longer attempt (and fail) to instantiate a
+non-existent `"icoFoam"` `Foam::solver`.
+
+---
+
 ## Known limitations / items needing follow-up
 
-1. **Compilation not yet verified.** The changes described here have been applied to the hippo source but have not been compiled against the actual ESI headers. Minor further fixes may be required.
+1. **Compilation not yet verified for the full test-suite changes above.** Items 1–20 have been built and run successfully against the system's ESI v2606 install (`hippo-opt` links and the `quadrilateral` mesh test now gets past mesh/BC/solver-registration setup). The specific test-directory changes in item 22 have not all been individually re-run yet; re-run the full test suite after these changes and file follow-ups for any case-specific numerical/gold-value mismatches (unrelated to the API porting itself).
 
-2. **HippoSolver migration guide for users.** Any application that previously subclassed `Foam::solver` must be updated to subclass `Hippo::HippoSolver` and call `FoamProblem::registerHippoSolver(std::make_unique<MyHippoSolver>(…))` before the first time step.
+2. **HippoSolver migration guide for users.** Any application that previously subclassed `Foam::solver` must be updated to subclass `Hippo::HippoSolver` and call `FoamProblem::registerHippoSolver(std::make_unique<MyHippoSolver>(…))` before the first time step. Alternatively, if an ESI `Foam::solver` module already implements the desired physics (e.g. `solid`, `fluid`), just set the controlDict `solver` entry — `FoamSolverAdapter` will auto-register it with no C++ changes required.
 
 3. **Crank-Nicolson temporal scheme.** The `removeOldTime()` logic in `FoamDataStore.h` now only clears old times for the Euler scheme (same as before). Crank-Nicolson will still emit a `mooseWarning` on the first time step. This is a pre-existing limitation, not a regression.
