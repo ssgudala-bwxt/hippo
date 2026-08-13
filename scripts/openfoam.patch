@@ -1,399 +1,254 @@
 diff --git a/src/OpenFOAM/db/IOstreams/Pstreams/UPstream.H b/src/OpenFOAM/db/IOstreams/Pstreams/UPstream.H
-index 3bc4fa20a..e560ba081 100644
+index eb4bcaa..0affa07 100644
 --- a/src/OpenFOAM/db/IOstreams/Pstreams/UPstream.H
 +++ b/src/OpenFOAM/db/IOstreams/Pstreams/UPstream.H
-@@ -46,9 +46,8 @@ SourceFiles
- #include "NamedEnum.H"
- #include "ListOps.H"
- #include "LIFOStack.H"
--
- // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
--
-+//#include <mpi.h>
- namespace Foam
- {
-
-@@ -58,7 +57,6 @@ namespace Foam
-
- class UPstream
- {
--
- public:
-
-     //- Types of communications
-@@ -369,6 +367,17 @@ public:
+@@ -1031,10 +1031,15 @@ public:
+ 
          //- Initialisation function called from main
-         //  Spawns slave processes and initialises inter-communication
+         //  Spawns sub-processes and initialises inter-communication
          static bool init(int& argc, char**& argv, const bool needsThread);
-+        /*  Maybe the worst but the easiest way to pass the comm through without
-+            changing the build system so it can find mpi.h/spoiling the encapsulation
-+            of mpi in the .C files
-+            - forward declaring doesn't work(?) because it it puts it puts the incomplete type in scope
-+            for functions that need it defined
-+            - AFAIKT mpich MPI_Comm is an int, but openmpi is a pointer to a struct
-+            - could do something horrible via fortran to convert to and from an integer - but no
-+            - Mybe best would be a struct MPI_Wrapp {MPI_Comm comm} then forward declare that but would
-+            prob need to define on moose side too.
-+        */
-+        static bool init(void *comm, const bool needsThread);
-
-         // Non-blocking comms
-
-diff --git a/src/OpenFOAM/global/argList/argList.C b/src/OpenFOAM/global/argList/argList.C
-index 9c5f42516..0dec89817 100644
---- a/src/OpenFOAM/global/argList/argList.C
-+++ b/src/OpenFOAM/global/argList/argList.C
-@@ -578,6 +578,153 @@ Foam::argList::argList
-     parse(checkArgs, checkOpts, initialise);
- }
-
-+/* Everything the same as above - replicated (for now) to make patch cleaner */
-+Foam::argList::argList
-+(
-+    int& argc,
-+    char**& argv,
-+    void *comm,
-+    bool checkArgs,
-+    bool checkOpts,
-+    const bool initialise
-+)
-+:
-+    args_(argc),
-+    options_(argc)
-+{
-+    // Pre-load any libraries
-+    {
-+        const string libsString(getEnv("FOAM_LIBS"));
-+        if (!libsString.empty())
+ 
++        //- Alternative init when MPI is already initialised externally
++        //  (e.g. by MOOSE/hippo). Stores comm so allocateCommunicatorComponents()
++        //  uses it instead of MPI_COMM_WORLD. comm must point to MPI_Comm.
++        static bool init(void* comm, const bool needsThread);
++
+         //- Special purpose initialisation function.
+         //  Performs a basic MPI_Init without any other setup.
+         //  Only used for applications that need MPI communication when
+         //  OpenFOAM is running in a non-parallel mode.
+         //  \note Behaves as a no-op if MPI has already been initialized.
+diff --git a/src/OpenFOAM/global/argList/parRun.H b/src/OpenFOAM/global/argList/parRun.H
+index 1646cbd..d100e09 100644
+--- a/src/OpenFOAM/global/argList/parRun.H
++++ b/src/OpenFOAM/global/argList/parRun.H
+@@ -184,10 +184,24 @@ public:
+ 
+                 UPstream::exit(1);
+             }
+             parallel_ = true;
+         }
++
++        //- Initialize UPstream with an external MPI communicator.
++        //  comm must point to an MPI_Comm. Intended for embedding OpenFOAM
++        //  inside another MPI application (e.g. MOOSE/hippo).
++        void runPar(void* comm, const bool needsThread)
 +        {
-+            libs.open(fileNameList((IStringStream(libsString))()));
-+        }
-+
-+        for (int argi=0; argi<argc; argi++)
-+        {
-+            if (argv[argi][0] == '-')
++            if (!UPstream::init(comm, needsThread))
 +            {
-+                const char *optionName = &argv[argi][1];
-+                if (string(optionName) == "libs")
-+                {
-+                    libs.open(fileNameList((IStringStream(argv[argi+1]))()));
-+                    break;
-+                }
++                (Foam::infoDetailLevel > 0 ? Info.stream() : InfoErr.stream())
++                    << "Failed to start parallel run (external MPI communicator)" << endl;
++                UPstream::exit(1);
 +            }
++            parallel_ = true;
 +        }
-+    }
-+
-+    // Check for fileHandler
-+    word handlerType(getEnv("FOAM_FILEHANDLER"));
-+    for (int argi=0; argi<argc; argi++)
-+    {
-+        if (argv[argi][0] == '-')
-+        {
-+            const char *optionName = &argv[argi][1];
-+            if (string(optionName) == "fileHandler")
-+            {
-+                handlerType = argv[argi+1];
-+                break;
-+            }
-+        }
-+    }
-+    if (handlerType.empty())
-+    {
-+        handlerType = fileOperation::defaultFileHandler;
-+    }
-+
-+    // Detect any parallel options
-+    bool needsThread = fileOperations::fileOperationInitialise::New
-+    (
-+        handlerType,
-+        argc,
-+        argv
-+    )().needsThreading();
-+
-+
-+    // Check if this run is a parallel run by searching for any parallel option
-+    // If found call runPar which might filter argv
-+    for (int argi=0; argi<argc; argi++)
-+    {
-+        if (argv[argi][0] == '-')
-+        {
-+            const char *optionName = &argv[argi][1];
-+
-+            if (validParOptions.found(optionName))
-+            {
-+                parRunControl_.runPar(comm, needsThread);
-+                break;
-+            }
-+        }
-+    }
-+
-+    // Convert argv -> args_ and capture ( ... ) lists
-+    // for normal arguments and for options
-+    regroupArgv(argc, argv);
-+
-+    // Get executable name
-+    args_[0]    = fileName(argv[0]);
-+    executable_ = fileName(argv[0]).name();
-+
-+    // Check arguments and options, we already have argv[0]
-+    int nArgs = 1;
-+    argListStr_ = args_[0];
-+
-+    for (int argi=1; argi<args_.size(); argi++)
-+    {
-+        argListStr_ += ' ';
-+        argListStr_ += args_[argi];
-+
-+        if (args_[argi][0] == '-')
-+        {
-+            const char *optionName = &args_[argi][1];
-+
-+            if
-+            (
-+                (
-+                    validOptions.found(optionName)
-+                 && !validOptions[optionName].empty()
-+                )
-+             || (
-+                    validParOptions.found(optionName)
-+                 && !validParOptions[optionName].empty()
-+                )
-+            )
-+            {
-+                ++argi;
-+                if (argi >= args_.size())
-+                {
-+                    FatalError
-+                        <<"Option '-" << optionName
-+                        << "' requires an argument" << endl;
-+                    printUsage();
-+                    FatalError.exit();
-+                }
-+
-+                argListStr_ += ' ';
-+                argListStr_ += args_[argi];
-+                options_.insert(optionName, args_[argi]);
-+            }
-+            else
-+            {
-+                options_.insert(optionName, "");
-+            }
-+        }
-+        else
-+        {
-+            if (nArgs != argi)
-+            {
-+                args_[nArgs] = args_[argi];
-+            }
-+            ++nArgs;
-+        }
-+    }
-+
-+    args_.setSize(nArgs);
-+
-+    parse(checkArgs, checkOpts, initialise);
-+}
-+
-
- Foam::argList::argList
- (
+ };
+ 
+ 
+ // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+ 
 diff --git a/src/OpenFOAM/global/argList/argList.H b/src/OpenFOAM/global/argList/argList.H
-index 813e4bfbd..ea1302df9 100644
+index ad3b169..6b06add 100644
 --- a/src/OpenFOAM/global/argList/argList.H
 +++ b/src/OpenFOAM/global/argList/argList.H
-@@ -90,7 +90,6 @@ SourceFiles
- #include "sigInt.H"
- #include "sigQuit.H"
- #include "sigSegv.H"
--
- // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-
- namespace Foam
-@@ -200,6 +199,16 @@ public:
+@@ -267,10 +267,23 @@ public:
+             bool checkArgs = argList::argsMandatory(),
              bool checkOpts = true,
              bool initialise = true
          );
-+        /* Alternative that accepts exteranl communicator i.e. from MOOSE */
+ 
++        //- Construct from argc/argv with an externally-owned MPI communicator.
++        //  For embedding OpenFOAM inside another MPI application (e.g. MOOSE/hippo).
++        //  comm must point to an MPI_Comm value (void* to avoid including mpi.h).
 +        argList
 +        (
 +            int& argc,
 +            char**& argv,
-+            void *comm,
-+            bool checkArgs = true,
++            void* comm,
++            bool checkArgs = argList::argsMandatory(),
 +            bool checkOpts = true,
 +            bool initialise = true
 +        );
-
++
          //- Construct copy with new options
          argList
-diff --git a/src/OpenFOAM/global/argList/parRun.H b/src/OpenFOAM/global/argList/parRun.H
-index e8de3d053..56735790a 100644
---- a/src/OpenFOAM/global/argList/parRun.H
-+++ b/src/OpenFOAM/global/argList/parRun.H
-@@ -64,6 +64,18 @@ public:
-         }
-     }
-
-+    /* Overload to call the (overloaded in turn) Pstream::init
-+       for when mpi already initialised */
-+    void runPar(void *external_comm, const bool needsThread)
+         (
+             const argList& args,
+             const HashTable<string>& options,
+diff --git a/src/OpenFOAM/global/argList/argList.C b/src/OpenFOAM/global/argList/argList.C
+index b063d21..cfc56a4 100644
+--- a/src/OpenFOAM/global/argList/argList.C
++++ b/src/OpenFOAM/global/argList/argList.C
+@@ -914,10 +914,50 @@ void Foam::argList::setCasePaths()
+ }
+ 
+ 
+ // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
+ 
++namespace
++{
++// Helper called from the delegating-constructor member-initializer list.
++// Stores the external MPI communicator via UPstream::init(void*) as a side-
++// effect before the standard argList(argc,argv,...) constructor body runs.
++// Returns argc unchanged so it can be forwarded to the delegated ctor.
++static int storeExternalMpiComm(void* comm, bool needsThread, int argc)
++{
++    Foam::UPstream::init(comm, needsThread);
++    return argc;
++}
++} // namespace
++
++
++// Construct from argc/argv with an externally-owned MPI communicator.
++// Intended for embedding OpenFOAM inside another MPI application (e.g. MOOSE/hippo)
++// that has already called MPI_Init. The communicator is stored via
++// storeExternalMpiComm() so that allocateCommunicatorComponents() uses it
++// instead of MPI_COMM_WORLD when the standard init(argc,argv) path runs.
++Foam::argList::argList
++(
++    int& argc,
++    char**& argv,
++    void* comm,
++    bool checkArgs,
++    bool checkOpts,
++    bool initialise
++)
++:
++    argList
++    (
++        storeExternalMpiComm(comm, argList::parallelThreads_, argc),
++        argv,
++        checkArgs,
++        checkOpts,
++        initialise
++    )
++{}
++
++
+ Foam::argList::argList
+ (
+     int& argc,
+     char**& argv,
+     bool checkArgs,
+diff --git a/src/Pstream/mpi/UPstream.C b/src/Pstream/mpi/UPstream.C
+index 5ce53d2..ee28b3f 100644
+--- a/src/Pstream/mpi/UPstream.C
++++ b/src/Pstream/mpi/UPstream.C
+@@ -48,10 +48,11 @@ constexpr int minBufLen = 20000000;
+ // Track size of attached MPI buffer
+ static int attachedBufLen = 0;
+ 
+ // Track if we initialized MPI
+ static bool ourMpi = false;
++static MPI_Comm externalMpiComm = MPI_COMM_NULL;
+ 
+ 
+ // * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
+ 
+ // Attach user-defined send buffer
+@@ -191,10 +192,44 @@ bool Foam::UPstream::initNull()
+ 
+     return true;
+ }
+ 
+ 
++bool Foam::UPstream::init(void* comm_ptr, const bool needsThread)
++{
++    int flag = 0;
++
++    MPI_Initialized(&flag);
++    if (!flag)
 +    {
-+        RunPar = true;
-+        if (!Pstream::init(external_comm, needsThread))
++        FatalErrorInFunction
++            << "UPstream::init(void* comm): MPI must already be initialized "
++               "before passing an external communicator."
++            << Foam::exit(FatalError);
++        return false;
++    }
++
++    // Store the external communicator. The caller retains ownership.
++    externalMpiComm = *reinterpret_cast<MPI_Comm*>(comm_ptr);
++    ourMpi = false;  // we did not call MPI_Init
++
++    if (needsThread)
++    {
++        int provided = 0;
++        MPI_Query_thread(&provided);
++        if (provided < MPI_THREAD_MULTIPLE)
 +        {
-+            Info<< "Failed to start parallel run" << endl;
-+            Pstream::exit(1);
++            WarningInFunction
++                << "External MPI was not initialized with MPI_THREAD_MULTIPLE."
++                << " Thread safety may be compromised." << nl;
 +        }
 +    }
 +
-     void runPar(int& argc, char**& argv, const bool needsThread)
++    return true;
++}
++
++
+ bool Foam::UPstream::init(int& argc, char**& argv, const bool needsThread)
+ {
+     int flag = 0;
+     int provided_thread_support = 0;
+ 
+@@ -676,12 +711,14 @@ void Foam::UPstream::shutdown(int errNo)
+         return;
+     }
+ 
+     if (!ourMpi)
      {
-         RunPar = true;
+-        WarningInFunction
+-            << "Finalizing MPI, but was initialized elsewhere\n";
++        // MPI was initialized externally (e.g. MOOSE). Do not call MPI_Finalize()
++        // as the external owner manages MPI lifetime.
++        ourMpi = false;
++        return;
+     }
+     ourMpi = false;
+ 
+ 
+     // Abort - stop now, without any final synchonization steps!
+@@ -797,11 +834,18 @@ void Foam::UPstream::allocateCommunicatorComponents
+                 << UPstream::commGlobal()
+                 << Foam::exit(FatalError);
+         }
+         auto& mpiNewComm = PstreamGlobals::MPICommunicators_[index];
+ 
+-        if (UPstream::noInitialCommDup_)
++        if (externalMpiComm != MPI_COMM_NULL)
++        {
++            // External communicator (e.g. MOOSE/hippo). Use directly;
++            // do NOT dup or free - the external application owns its lifetime.
++            PstreamGlobals::pendingMPIFree_[index] = false;
++            PstreamGlobals::MPICommunicators_[index] = externalMpiComm;
++        }
++        else if (UPstream::noInitialCommDup_)
+         {
+             PstreamGlobals::pendingMPIFree_[index] = false;
+             PstreamGlobals::MPICommunicators_[index] = MPI_COMM_WORLD;
+         }
+         else
 diff --git a/src/Pstream/dummy/UPstream.C b/src/Pstream/dummy/UPstream.C
-index f0553baee..95a67396d 100644
+index 814d9a7..3cfff45 100644
 --- a/src/Pstream/dummy/UPstream.C
 +++ b/src/Pstream/dummy/UPstream.C
-@@ -42,6 +42,15 @@ bool Foam::UPstream::init(int& argc, char**& argv, const bool needsThread)
+@@ -43,10 +43,19 @@ bool Foam::UPstream::initNull()
+ 
      return false;
  }
-
-+bool Foam::UPstream::init(void *, bool needsThread) {
+ 
+ 
++bool Foam::UPstream::init(void*, const bool)
++{
 +    FatalErrorInFunction
-+        << "Trying to use the dummy Pstream library." << nl
-+        << "This dummy library cannot be used in parallel mode"
++        << "The dummy Pstream cannot be used with an external MPI communicator."
 +        << Foam::exit(FatalError);
-+
 +    return false;
 +}
 +
-
- void Foam::UPstream::exit(int errnum)
- {
-diff --git a/src/Pstream/mpi/UPstream.C b/src/Pstream/mpi/UPstream.C
-index 03433b398..dc9e39c0b 100644
---- a/src/Pstream/mpi/UPstream.C
-+++ b/src/Pstream/mpi/UPstream.C
-@@ -50,6 +50,7 @@ License
- // valid parallel options vary between implementations, but flag common ones.
- // if they are not removed by MPI_Init(), the subsequent argument processing
- // will notice that they are wrong
-+#include <unistd.h>
- void Foam::UPstream::addValidParOptions(HashTable<string>& validParOptions)
- {
-     validParOptions.insert("np", "");
-@@ -59,6 +60,102 @@ void Foam::UPstream::addValidParOptions(HashTable<string>& validParOptions)
-     validParOptions.insert("p4yourname", "hostname");
-     validParOptions.insert("machinefile", "machine file");
- }
-+static bool _external_mpi = false;
-+/* Alternative init if mpi is already intialised in Moose*/
-+bool Foam::UPstream::init(void *comm_ptr, const bool needsThread)
-+{
-+    _external_mpi = true;
-+    MPI_Comm comm = *((MPI_Comm*)comm_ptr);
-+    int rank,size;
-+    MPI_Comm_rank(comm,&rank);
-+    MPI_Comm_size(comm,&size);
 +
-+    int flag;
-+    MPI_Initialized(&flag);
-+    if (!flag) {
-+        FatalErrorInFunction
-+            << "MPI not initialised: call init( int& argc, char**& argv, const bool needsThread)\n"
-+            << Foam::abort(Foam::FatalError);
-+    }
-+
-+    /*
-+      Assuming that mpi was intialised with mpi_init_thread
-+      if it isn't the returned value is implimentation defined (sigh)
-+      Can't find a function to check this but moose does use init_thread
-+    */
-+    int provided_thread_support;
-+    if (needsThread) {
-+        MPI_Query_thread(&provided_thread_support);
-+        if (provided_thread_support != MPI_THREAD_MULTIPLE) {
-+        FatalErrorInFunction
-+            << "MPI implimentation does not provide required level of threading support (MPI_THREAD_MULTIPLE)"
-+            << Foam::abort(Foam::FatalError);
-+        }
-+    }
-+    /* Just a copy and paste from below - no refactor to keep patch clean */
-+    int myGlobalRank;
-+    MPI_Comm_rank(comm, &myGlobalRank);
-+    MPI_Comm_split
-+    (
-+        comm,
-+        1,
-+        myGlobalRank,
-+        &PstreamGlobals::MPI_COMM_FOAM
-+    );
-+
-+    MPI_Comm_rank(PstreamGlobals::MPI_COMM_FOAM,&rank);
-+    MPI_Comm_size(PstreamGlobals::MPI_COMM_FOAM,&size);
-+
-+    int numprocs;
-+    MPI_Comm_size(PstreamGlobals::MPI_COMM_FOAM, &numprocs);
-+    int myRank;
-+    MPI_Comm_rank(PstreamGlobals::MPI_COMM_FOAM, &myRank);
-+
-+    int send = 1, recv = 0;
-+    MPI_Allreduce(&send, &recv, 1, MPI_INT, MPI_SUM,  PstreamGlobals::MPI_COMM_FOAM);
-+
-+    if (debug)
-+    {
-+        Pout<< "UPstream::init : initialised with numProcs:" << numprocs
-+            << " myRank:" << myRank << endl;
-+    }
-+
-+    if (numprocs <= 1)
-+    {
-+        FatalErrorInFunction
-+            << "bool IPstream::init(int& argc, char**& argv) : "
-+               "attempt to run parallel on 1 processor"
-+            << Foam::abort(FatalError);
-+    }
-+
-+
-+    // Initialise parallel structure
-+    setParRun(numprocs, provided_thread_support == MPI_THREAD_MULTIPLE);
-+
-+    #ifndef SGIMPI
-+    string bufferSizeName = getEnv("MPI_BUFFER_SIZE");
-+
-+    if (bufferSizeName.size())
-+    {
-+        int bufferSize = atoi(bufferSizeName.c_str());
-+
-+        if (bufferSize)
-+        {
-+            MPI_Buffer_attach(new char[bufferSize], bufferSize);
-+        }
-+    }
-+    else
-+    {
-+        FatalErrorInFunction
-+            << "UPstream::init(int& argc, char**& argv) : "
-+            << "environment variable MPI_BUFFER_SIZE not defined"
-+            << Foam::abort(FatalError);
-+    }
-+    #endif
-+
-+    return true;
-+
-+}
-
-
  bool Foam::UPstream::init(int& argc, char**& argv, const bool needsThread)
-@@ -185,8 +282,10 @@ void Foam::UPstream::exit(int errnum)
-
-     if (errnum == 0)
-     {
--        MPI_Finalize();
--        ::exit(errnum);
-+        if (!_external_mpi) {
-+            MPI_Finalize();
-+            ::exit(errnum);
-+        }
-     }
-     else
-     {
+ {
+     FatalErrorInFunction
+         << "The dummy Pstream library cannot be used in parallel mode"
+         << endl
