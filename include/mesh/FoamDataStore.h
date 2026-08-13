@@ -61,6 +61,48 @@ struct has_clearOldTimes<T, std::void_t<decltype(std::declval<T &>().clearOldTim
 {
 };
 
+template <typename T, typename = void>
+struct has_primitiveField : std::false_type
+{
+};
+
+template <typename T>
+struct has_primitiveField<T, std::void_t<decltype(std::declval<const T &>().primitiveField())>>
+  : std::true_type
+{
+};
+
+template <typename T, typename = void>
+struct has_primitiveFieldRef : std::false_type
+{
+};
+
+template <typename T>
+struct has_primitiveFieldRef<T, std::void_t<decltype(std::declval<T &>().primitiveFieldRef())>>
+  : std::true_type
+{
+};
+
+template <typename T>
+inline const auto &
+internalFieldConst(const T & field)
+{
+  if constexpr (has_primitiveField<T>::value)
+    return field.primitiveField();
+  else
+    return field.field();
+}
+
+template <typename T>
+inline auto &
+internalFieldRef(T & field)
+{
+  if constexpr (has_primitiveFieldRef<T>::value)
+    return field.primitiveFieldRef();
+  else
+    return field.field();
+}
+
 // This function extracts the keys associated with fields of type T from the
 // mesh object registry. Note for some fields, the field.name() and the
 // key are not the same. *strict* indicates whether types derived from T are
@@ -115,12 +157,13 @@ inline void
 readField(std::istream & stream, GeoField & field)
 {
 
-  std::vector<typename GeoField::value_type> internal_data(field.size());
+  auto & internal = internalFieldRef(field);
+  std::vector<typename GeoField::value_type> internal_data(internal.size());
   loadHelper(stream, internal_data, nullptr);
 
   for (auto i = 0lu; i < internal_data.size(); ++i)
   {
-    field.primitiveFieldRef()[i] = internal_data[i];
+    internal[i] = internal_data[i];
   }
 
   readBoundary(stream, field);
@@ -159,8 +202,9 @@ template <typename GeoField>
 inline void
 writeField(ostream & stream, const GeoField & field)
 {
-  std::vector<typename GeoField::value_type> internal_field(field.primitiveField().size());
-  std::copy(field.primitiveField().begin(), field.primitiveField().end(), internal_field.begin());
+  const auto & internal = internalFieldConst(field);
+  std::vector<typename GeoField::value_type> internal_field(internal.size());
+  std::copy(internal.begin(), internal.end(), internal_field.begin());
 
   storeHelper(stream, internal_field, nullptr);
 
