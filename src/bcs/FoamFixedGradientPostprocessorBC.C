@@ -29,7 +29,7 @@ FoamFixedGradientPostprocessorBC::imposeBoundaryCondition()
     auto & boundary = foam_mesh.boundary()[subdomain];
     // Get underlying field from OpenFOAM boundary patch.
     auto & foam_gradient =
-        _mesh->getGradientBCField<Foam::volScalarField, double>(subdomain, _foam_variable);
+        _mesh->getGradientBCField<Foam::volScalarField>(subdomain, _foam_variable);
 
     // If diffusivity_coefficient is specified grad array is a flux, so result
     // must be divided by it

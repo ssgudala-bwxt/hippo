@@ -35,7 +35,7 @@ FoamFixedGradientBC::imposeBoundaryCondition()
 
     // Get the gradient associated with the field
     auto & foam_gradient =
-        _mesh->getGradientBCField<Foam::volScalarField, double>(subdomain, _foam_variable);
+        _mesh->getGradientBCField<Foam::volScalarField>(subdomain, _foam_variable);
     assert(grad_array.size() == static_cast<size_t>(foam_gradient.size()));
 
     std::copy(grad_array.begin(), grad_array.end(), foam_gradient.begin());
