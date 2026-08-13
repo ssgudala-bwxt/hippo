@@ -91,7 +91,7 @@ index b063d21..cfc56a4 100644
 +// Stores the external MPI communicator via UPstream::init(void*) as a side-
 +// effect before the standard argList(argc,argv,...) constructor body runs.
 +// Returns argc unchanged so it can be forwarded to the delegated ctor.
-+static int storeExternalMpiComm(void* comm, bool needsThread, int argc)
++static int& storeExternalMpiComm(void* comm, bool needsThread, int& argc)
 +{
 +    Foam::UPstream::init(comm, needsThread);
 +    return argc;

@@ -464,7 +464,7 @@ Implements the new constructor as a **delegating constructor** using an anonymou
 namespace {
 // Called from the member-initializer list so UPstream::init(void*) fires
 // before the delegated-to constructor body runs.
-static int storeExternalMpiComm(void* comm, bool needsThread, int argc)
+static int& storeExternalMpiComm(void* comm, bool needsThread, int& argc)
 {
     Foam::UPstream::init(comm, needsThread);
     return argc;
