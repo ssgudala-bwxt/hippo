@@ -8,6 +8,7 @@
 #include <functionObject.H>
 #include <scalar.H>
 
+#include <memory>
 #include <optional>
 
 namespace Foam
@@ -124,6 +125,7 @@ public:
 
 private:
   HippoSolver * _solver = nullptr;
+  std::unique_ptr<Foam::functionObjects::mooseDeltaT> _moose_dt;
 
   Foam::Time & runTime() { return _solver->runTime(); }
   const Foam::Time & runTime() const { return _solver->runTime(); }

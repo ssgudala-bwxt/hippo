@@ -7,6 +7,7 @@
 #include <Time.H>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <scalarField.H>
@@ -42,7 +43,7 @@ adjustDeltaT(Foam::Time & runTime, const HippoSolver & solver)
     const Foam::scalar deltaT =
         std::min(solver.maxDeltaT(), Foam::scalar(Foam::VGREAT));
 
-    if (deltaT < Foam::rootVGreat)
+    if (deltaT < Foam::VGREAT)
     {
       // ESI: setDeltaT(value, adjust) — pass adjust=true so adjustDeltaT()
       // (which calls functionObjects adjustTimeStep()) is also triggered.
@@ -61,28 +62,13 @@ setDeltaT(Foam::Time & runTime, const HippoSolver & solver)
   {
     const Foam::scalar deltaT = solver.maxDeltaT();
 
-    if (deltaT < Foam::rootVGreat)
+    if (deltaT < Foam::VGREAT)
     {
       runTime.setDeltaT(std::min(runTime.deltaTValue(), deltaT));
     }
   }
 }
 
-/**
- * Returns the mooseDeltaT function object if it exists.
- */
-std::optional<std::reference_wrapper<Foam::functionObjects::mooseDeltaT>>
-findMooseDeltaT(Foam::Time & time)
-{
-  auto & fo_list = time.functionObjects();
-  for (int i = 0; i < fo_list.size(); ++i)
-  {
-    auto * ptr = dynamic_cast<Foam::functionObjects::mooseDeltaT *>(&fo_list[i]);
-    if (ptr)
-      return *ptr;
-  }
-  return std::nullopt;
-}
 } // namespace
 
 /**
@@ -112,6 +98,8 @@ FoamSolver::run()
 
   // Adjust the time-step according to the solver maxDeltaT
   adjustDeltaT(time, solver);
+  if (_moose_dt)
+    _moose_dt->adjustTimeStep();
   ++time;
 
   // TODO: replace std::cout with MOOSE output or a dependency-injected stream.
@@ -153,7 +141,7 @@ FoamSolver::computeDeltaT()
   // MOOSE can predict it.
   Foam::scalar deltaT = _solver->maxDeltaT();
 
-  if (deltaT < Foam::rootVGreat)
+  if (deltaT < Foam::VGREAT)
   {
     // ESI: setDeltaT(value, adjust=true) triggers adjustDeltaT() internally,
     // which may call functionObjects' adjustTimeStep(). We probe the result then
@@ -190,26 +178,21 @@ FoamSolver::setDeltaTAdjustable(const bool adjustable)
 void
 FoamSolver::appendDeltaTFunctionObject(const Foam::scalar & dt)
 {
-  // Call setDeltaT to ensure the functionObjectList dict has been read/cleared.
-  runTime().setDeltaT(getTimeDelta(), false);
-
   // Do not recreate function object if it exists. It seems MOOSE calls
   // computeInitialDT twice.
-  if (findMooseDeltaT(runTime()).has_value())
+  if (_moose_dt)
     return;
 
-  auto moose_dt = new Foam::functionObjects::mooseDeltaT("mooseTimeStep", runTime(), dt);
-  runTime().functionObjects().append(moose_dt);
+  _moose_dt = std::make_unique<Foam::functionObjects::mooseDeltaT>(
+      "mooseTimeStep", runTime(), dt);
 }
 
 Foam::functionObjects::mooseDeltaT &
 FoamSolver::getDeltaTFunctionObject()
 {
-  // Return reference to function object and error if it is not found.
-  auto moose_dt = findMooseDeltaT(runTime());
-  if (!moose_dt.has_value())
+  if (!_moose_dt)
     mooseError("MooseDeltaT function object not found. This is a bug, contact developers.");
 
-  return *moose_dt;
+  return *_moose_dt;
 }
 } // namespace Hippo

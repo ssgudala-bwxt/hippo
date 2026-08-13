@@ -41,19 +41,7 @@ make_foam_init_args(const std::string & case_dir, MPI_Comm const & comm)
 Foam::argList
 make_arg_list(cArgs & argv, MPI_Comm const & comm)
 {
-  int size;
-  MPI_Comm_size(comm, &size);
-  auto arg_list = Foam::argList(argv.get_argc(), argv.get_argv_ptr(), (void *)&comm);
-  if (!arg_list.checkRootCase())
-  {
-    int rank;
-    MPI_Comm_rank(comm, &rank);
-    if (!arg_list.checkRootCase())
-    {
-      mooseWarning("OpenFOAM failed root case check rank: ", rank);
-    }
-  }
-  return arg_list;
+  return Foam::argList(argv.get_argc(), argv.get_argv_ptr(), (void *)&comm);
 }
 } // namespace
 

@@ -34,7 +34,10 @@ namespace Hippo
 class HippoSolver
 {
 public:
-  explicit HippoSolver(Foam::fvMesh & mesh) : _mesh(mesh), _run_time(mesh.time()) {}
+  explicit HippoSolver(Foam::fvMesh & mesh)
+    : _mesh(mesh), _run_time(const_cast<Foam::Time &>(mesh.time()))
+  {
+  }
 
   virtual ~HippoSolver() = default;
 
