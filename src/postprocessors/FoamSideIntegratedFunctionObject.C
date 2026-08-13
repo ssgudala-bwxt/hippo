@@ -28,7 +28,9 @@ FoamSideIntegratedFunctionObject::createFunctionObject(const std::string & fo_na
 {
   auto fo_dict = _foam_mesh->time().controlDict().lookupOrDefault(fo_name, Foam::dictionary());
 
-  Foam::wordList patch_names(_boundary.begin(), _boundary.end());
+  Foam::wordList patch_names(static_cast<Foam::label>(_boundary.size()));
+  for (Foam::label i = 0; i < static_cast<Foam::label>(_boundary.size()); ++i)
+    patch_names[i] = _boundary[i];
 
   fo_dict.set("patches", patch_names);
   fo_dict.set("writeToFile", false);
