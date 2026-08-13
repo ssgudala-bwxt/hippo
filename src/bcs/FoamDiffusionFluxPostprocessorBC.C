@@ -2,9 +2,42 @@
 #include "FoamPostprocessorBCBase.h"
 #include "PstreamReduceOps.H"
 #include "Registry.h"
+#include <IOdictionary.H>
 #include <algorithm>
+#include <optional>
 
 registerMooseObject("hippoApp", FoamDiffusionFluxPostprocessorBC);
+
+namespace
+{
+std::optional<Foam::scalar>
+readConstantDiffusivity(const Foam::fvMesh & mesh, const Foam::word & name)
+{
+  Foam::IOdictionary physical_props(
+      Foam::IOobject("physicalProperties",
+                     mesh.time().constant(),
+                     mesh,
+                     Foam::IOobject::MUST_READ,
+                     Foam::IOobject::NO_WRITE,
+                     false));
+
+  if (physical_props.found(name))
+    return physical_props.lookup<Foam::scalar>(name);
+
+  if (physical_props.found("mixture"))
+  {
+    const auto & mixture = physical_props.subDict("mixture");
+    if (mixture.found("transport"))
+    {
+      const auto & transport = mixture.subDict("transport");
+      if (transport.found(name))
+        return transport.lookup<Foam::scalar>(name);
+    }
+  }
+
+  return std::nullopt;
+}
+}
 
 InputParameters
 FoamDiffusionFluxPostprocessorBC::validParams()
@@ -18,10 +51,6 @@ FoamDiffusionFluxPostprocessorBC::validParams()
 FoamDiffusionFluxPostprocessorBC::FoamDiffusionFluxPostprocessorBC(const InputParameters & params)
   : FoamPostprocessorBCBase(params), _diffusivity(getParam<std::string>("diffusivity"))
 {
-  if (!_mesh->fvMesh().foundObject<Foam::volScalarField>(_diffusivity))
-  {
-    mooseError("Diffusivity '", _diffusivity, "' not a Foam volScalarField.");
-  }
 }
 
 void
@@ -38,16 +67,28 @@ FoamDiffusionFluxPostprocessorBC::imposeBoundaryCondition()
     auto & foam_gradient =
         _mesh->getGradientBCField<Foam::volScalarField>(subdomain, _foam_variable);
 
-    // Get the underlying diffusivity field
-    const auto & coeff =
-        foam_mesh.boundary()[subdomain].lookupPatchField<Foam::volScalarField>(
-            _diffusivity);
+    Foam::scalar coeff_bulk = 1.0;
+    if (foam_mesh.foundObject<Foam::volScalarField>(_diffusivity))
+    {
+      const auto & coeff =
+          foam_mesh.boundary()[subdomain].lookupPatchField<Foam::volScalarField>(
+              _diffusivity);
 
-    // Calculate the bulk value of the diffusivity coefficient
-    const auto area = boundary.magSf();
-    const auto total_area = Foam::returnReduce(Foam::sum(area), Foam::sumOp<Foam::scalar>());
-    const auto coeff_bulk =
-        Foam::returnReduce(Foam::sum(coeff * area), Foam::sumOp<Foam::scalar>()) / total_area;
+      // Calculate the bulk value of the diffusivity coefficient
+      const auto area = boundary.magSf();
+      const auto total_area = Foam::returnReduce(Foam::sum(area), Foam::sumOp<Foam::scalar>());
+      coeff_bulk =
+          Foam::returnReduce(Foam::sum(coeff * area), Foam::sumOp<Foam::scalar>()) / total_area;
+    }
+    else
+    {
+      auto coeff = readConstantDiffusivity(foam_mesh, _diffusivity);
+      if (!coeff.has_value())
+        mooseError("Diffusivity '",
+                   _diffusivity,
+                   "' is neither a Foam volScalarField nor a scalar in constant/physicalProperties.");
+      coeff_bulk = coeff.value();
+    }
 
     // set gradient
     std::fill(foam_gradient.begin(), foam_gradient.end(), _pp_value / coeff_bulk);
