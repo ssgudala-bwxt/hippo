@@ -4,6 +4,62 @@
 #include "fvCFD_moose.h"
 
 #include <DataIO.h>
+#include <type_traits>
+#include <utility>
+
+template <typename T, typename = void>
+struct has_isOldTime : std::false_type
+{
+};
+
+template <typename T>
+struct has_isOldTime<T, std::void_t<decltype(std::declval<const T &>().isOldTime())>>
+  : std::true_type
+{
+};
+
+template <typename T, typename = void>
+struct has_nOldTimes : std::false_type
+{
+};
+
+template <typename T>
+struct has_nOldTimes<T, std::void_t<decltype(std::declval<const T &>().nOldTimes())>>
+  : std::true_type
+{
+};
+
+template <typename T, typename = void>
+struct has_oldTime : std::false_type
+{
+};
+
+template <typename T>
+struct has_oldTime<T, std::void_t<decltype(std::declval<T &>().oldTime(1))>> : std::true_type
+{
+};
+
+template <typename T, typename = void>
+struct has_oldTimeRef : std::false_type
+{
+};
+
+template <typename T>
+struct has_oldTimeRef<T, std::void_t<decltype(std::declval<T &>().oldTimeRef(1))>>
+  : std::true_type
+{
+};
+
+template <typename T, typename = void>
+struct has_clearOldTimes : std::false_type
+{
+};
+
+template <typename T>
+struct has_clearOldTimes<T, std::void_t<decltype(std::declval<T &>().clearOldTimes())>>
+  : std::true_type
+{
+};
 
 // This function extracts the keys associated with fields of type T from the
 // mesh object registry. Note for some fields, the field.name() and the
@@ -14,15 +70,20 @@ inline std::vector<Foam::string>
 getFieldkeys(const Foam::fvMesh & mesh)
 {
   std::vector<Foam::string> fieldKeyList;
-  for (auto key : mesh.toc())
+  for (const auto & key : mesh.template names<T>())
   {
-    if (mesh.foundObject<T>(key))
+    auto & field = mesh.lookupObjectRef<T>(key);
+    bool include = true;
+    if constexpr (has_isOldTime<T>::value)
+      include = include && !field.isOldTime();
+    if constexpr (strict)
+      include = include && Foam::isType<T>(field);
+    else
+      include = include && Foam::isA<T>(field);
+
+    if (include)
     {
-      auto & field = mesh.lookupObjectRef<T>(key);
-      if (!field.isOldTime() && (Foam::isType<T>(field) || (Foam::isA<T>(field) && !strict)))
-      {
-        fieldKeyList.push_back(key);
-      }
+      fieldKeyList.push_back(key);
     }
   }
 
@@ -122,7 +183,9 @@ dataStoreField(std::ostream & stream,
                T & field,
                std::set<std::string> & field_list)
 {
-  auto nOldTimes{field.nOldTimes(false)};
+  Foam::label nOldTimes{0};
+  if constexpr (has_nOldTimes<T>::value && has_oldTime<T>::value)
+    nOldTimes = field.nOldTimes();
   storeHelper(stream, nOldTimes, nullptr);
 
   std::string field_name{name};
@@ -130,10 +193,13 @@ dataStoreField(std::ostream & stream,
   writeField(stream, field);
 
   field_list.insert(name);
-  for (int n = 1; n <= nOldTimes; ++n)
+  if constexpr (has_nOldTimes<T>::value && has_oldTime<T>::value)
   {
-    writeField(stream, field.oldTime(n));
-    field_list.insert(field.oldTime(n).name());
+    for (int n = 1; n <= nOldTimes; ++n)
+    {
+      writeField(stream, field.oldTime(n));
+      field_list.insert(field.oldTime(n).name());
+    }
   }
 }
 
@@ -151,10 +217,13 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
   auto & field = foam_mesh.lookupObjectRef<T>(field_name);
   readField(stream, field);
 
-  for (int nOld = 1; nOld <= nOldTimes; ++nOld)
+  if constexpr (has_oldTimeRef<T>::value)
   {
-    auto & old_field = field.oldTimeRef(nOld);
-    readField(stream, old_field);
+    for (int nOld = 1; nOld <= nOldTimes; ++nOld)
+    {
+      auto & old_field = field.oldTimeRef(nOld);
+      readField(stream, old_field);
+    }
   }
 }
 
@@ -203,28 +272,9 @@ removeOldTime(Foam::fvMesh & mesh, T & field)
   //   - Crank-Nicolson
   // Current behaviour do not clear the old time base field for CN even though this would result in
   // a small error compared to not using fixed-point. Potentially add warning.
-  auto scheme = Foam::fv::ddtScheme<typename T::cmptType>::New(
-                    mesh, mesh.schemes().ddt("ddt(" + field.name() + ')'))
-                    ->type();
-
-  if (scheme == "Euler")
+  if constexpr (has_clearOldTimes<T>::value)
   {
-    // clearOldTimes() is available in both Foundation and ESI.
-    // Foundation additionally exposed OldTimeBaseFieldType / nullOldestTime; those
-    // private internals do not exist in ESI OpenFOAM-v2606, so we only call
-    // clearOldTimes() here which is the public API available on both branches.
     field.clearOldTimes();
-  }
-  else
-  {
-    mooseDoOnce(mooseWarning("Temporal scheme '",
-                             scheme,
-                             "' may result in slightly different behaviour on the first time step "
-                             "when using fixed-point iteration. See comments above ",
-                             __LINE__,
-                             " in file ",
-                             __FILE__,
-                             " for more details."));
   }
 }
 
@@ -239,19 +289,15 @@ loadFields(std::istream & stream, Foam::fvMesh & mesh)
     dataLoadField<T>(stream, mesh);
   }
 
-  // ESI uses lookupClass<T>() instead of Foundation's curFields<T>().
-  for (auto & [key, field_ptr] : mesh.lookupClass<T>())
+  const auto cur_fields{getFieldkeys<T, false>(mesh)};
+  for (const auto & key : cur_fields)
   {
-    T & field = *field_ptr;
+    T & field = mesh.lookupObjectRef<T>(key);
     // Remove fields that haven't been stored. Important for subcycling to prevent the old
     // fields which haven't been stored being used on the first time step.
     if (mesh.time().timeIndex() == 0)
     {
       removeOldTime(mesh, field);
-      if (mesh.time().timeIndex() != field.timeIndex())
-      {
-        mesh.checkOut(field);
-      }
     }
   }
 }
@@ -300,7 +346,7 @@ debug_print_field_names(const Foam::fvMesh & mesh, const std::set<std::string> &
     dbg_msg += field + " ";
   }
   dbg_msg += "\nNot backed up keys in fvMesh: ";
-  for (const auto & field : mesh.toc())
+  for (const auto & field : mesh.names())
   {
     if (std::find(field_list.begin(), field_list.end(), field) == field_list.end())
     {
