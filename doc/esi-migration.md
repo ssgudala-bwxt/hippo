@@ -430,19 +430,112 @@ The patch worked by calling `MPI_Comm_split` on the external comm to create a ne
 
 ESI uses `PstreamGlobals::MPICommunicators_` (a `DynamicList<MPI_Comm>`) indexed by communicator label. `allocateCommunicatorComponents(parentIndex=-1, index=0)` sets up the global (index-0) communicator by either assigning `MPI_COMM_WORLD` directly (`noInitialCommDup_=true`) or duping it.
 
-The new ESI patch (`scripts/openfoam.patch`) adds:
+`scripts/openfoam.patch` is a **real unified diff** (`git apply`-able) generated against the `OpenFOAM-v2606` source tree. It modifies 6 files:
 
-1. **`UPstream::init(void* comm_ptr, bool needsThread)`** — stores the external `MPI_Comm` in a file-static `externalMpiComm`, validates that MPI is already initialized, and returns `true`. Crucially, it does **not** call `MPI_Init_thread` and leaves `ourMpi = false`.
+#### `src/OpenFOAM/db/IOstreams/Pstreams/UPstream.H`
+Declares a new overload alongside the existing `init(int& argc, char**& argv, bool)`:
+```cpp
+// Alternative init when MPI is already initialised externally
+// (e.g. by MOOSE/hippo). comm must point to MPI_Comm.
+static bool init(void* comm, const bool needsThread);
+```
 
-2. **`allocateCommunicatorComponents(parentIndex=-1, index=0)` modification** — if `externalMpiComm != MPI_COMM_NULL`, uses it directly instead of `MPI_COMM_WORLD` (and does not dup it, since the external app owns its lifetime).
+#### `src/OpenFOAM/global/argList/parRun.H`
+Adds a `runPar(void* comm, bool needsThread)` method to `ParRunControl` that calls `UPstream::init(void*)`:
+```cpp
+void runPar(void* comm, const bool needsThread)
+{
+    if (!UPstream::init(comm, needsThread)) { UPstream::exit(1); }
+    parallel_ = true;
+}
+```
 
-3. **`shutdown()` modification** — guards `MPI_Finalize()` with `if (ourMpi)` so OpenFOAM does not finalize MPI when it was initialized externally.
+#### `src/OpenFOAM/global/argList/argList.H`
+Declares a new constructor before the "Construct copy with new options" block:
+```cpp
+// comm must point to an MPI_Comm (void* to avoid including mpi.h)
+argList(int& argc, char**& argv, void* comm,
+        bool checkArgs = ..., bool checkOpts = true, bool initialise = true);
+```
 
-4. **`ParRunControl::runPar(void* comm, bool needsThread)`** — calls `UPstream::init(comm, needsThread)`.
+#### `src/OpenFOAM/global/argList/argList.C`
+Implements the new constructor as a **delegating constructor** using an anonymous-namespace helper to produce the side-effect of storing the external comm before the standard constructor body runs:
+```cpp
+namespace {
+// Called from the member-initializer list so UPstream::init(void*) fires
+// before the delegated-to constructor body runs.
+static int storeExternalMpiComm(void* comm, bool needsThread, int argc)
+{
+    Foam::UPstream::init(comm, needsThread);
+    return argc;
+}
+} // namespace
 
-5. **`argList(int& argc, char**& argv, void* comm, ...)`** — uses a static-function side-effect (`storeExternalMpiComm`) in the delegating-constructor member-initializer list to call `UPstream::init(void*)` before delegating to the standard `argList(argc, argv, ...)` constructor. The standard constructor then calls `runPar(argc, argv)` → `UPstream::init(argc, argv)`, which detects MPI already initialized (skips `MPI_Init_thread`) and proceeds normally with `allocateCommunicatorComponents` using the stored external comm.
+Foam::argList::argList(int& argc, char**& argv, void* comm,
+                       bool checkArgs, bool checkOpts, bool initialise)
+:
+    argList(storeExternalMpiComm(comm, argList::parallelThreads_, argc),
+            argv, checkArgs, checkOpts, initialise)
+{}
+```
+The standard constructor then calls `runPar(argc, argv)` → `UPstream::init(argc, argv)`, which detects MPI already initialized, skips `MPI_Init_thread`, and falls through to `allocateCommunicatorComponents` which picks up the stored `externalMpiComm`.
 
-> **Note:** `scripts/openfoam.patch` is a design/description patch, not a line-number-exact unified diff. It will require minor adjustment when applied against the actual checked-out ESI source tree using `git apply`.
+#### `src/Pstream/mpi/UPstream.C` (4 changes)
+
+1. **File-static storage** — added after `static bool ourMpi = false;`:
+   ```cpp
+   static MPI_Comm externalMpiComm = MPI_COMM_NULL;
+   ```
+
+2. **`init(void* comm_ptr, bool needsThread)`** — validates MPI is already initialized, stores the comm, sets `ourMpi = false` (we did not call `MPI_Init`), optionally warns on thread support:
+   ```cpp
+   bool Foam::UPstream::init(void* comm_ptr, const bool needsThread)
+   {
+       // ... MPI_Initialized check ...
+       externalMpiComm = *reinterpret_cast<MPI_Comm*>(comm_ptr);
+       ourMpi = false;
+       // ... optional MPI_THREAD_MULTIPLE warning ...
+       return true;
+   }
+   ```
+
+3. **`allocateCommunicatorComponents(parentIndex == -1)` branch** — inserted before the existing `noInitialCommDup_` check:
+   ```cpp
+   if (externalMpiComm != MPI_COMM_NULL)
+   {
+       // Use external comm directly; caller owns lifetime — no dup, no free.
+       PstreamGlobals::pendingMPIFree_[index] = false;
+       PstreamGlobals::MPICommunicators_[index] = externalMpiComm;
+   }
+   else if (UPstream::noInitialCommDup_) { ... }
+   else { MPI_Comm_dup(MPI_COMM_WORLD, &mpiNewComm); }
+   ```
+
+4. **`shutdown()` early return** — changed from a warning-then-continue to a hard return so OpenFOAM never calls `MPI_Finalize()` when MPI is externally owned:
+   ```cpp
+   if (!ourMpi)
+   {
+       // MPI initialized externally — do not call MPI_Finalize().
+       ourMpi = false;
+       return;   // <-- was: WarningInFunction << "..." then fall through
+   }
+   ```
+
+#### `src/Pstream/dummy/UPstream.C`
+Adds a `FatalError` stub so the dummy (serial) Pstream library satisfies the new declaration:
+```cpp
+bool Foam::UPstream::init(void*, const bool)
+{
+    FatalErrorInFunction
+        << "The dummy Pstream cannot be used with an external MPI communicator."
+        << Foam::exit(FatalError);
+    return false;
+}
+```
+
+### How to apply
+
+`scripts/install-openfoam.sh` runs `git -C "${OPENFOAM_DIR}" apply "${SCRIPT_DIR}/openfoam.patch"` automatically. The patch was generated with `git diff --no-index` against an unmodified `OpenFOAM-v2606` source tree and uses standard `a/src/...` / `b/src/...` relative paths, so it applies cleanly with no manual adjustment needed.
 
 ---
 
@@ -516,10 +609,8 @@ All `OpenFOAM-12` path references in `apptainer/hippo-dev.def` and `apptainer/hi
 
 ## Known limitations / items needing follow-up
 
-1. **`scripts/openfoam.patch`** is a description-style patch, not a line-number-exact unified diff. It must be refined against the actual `OpenFOAM-v2606` source tree using `git diff` before `install-openfoam.sh` can apply it automatically.
+1. **Compilation not yet verified.** The changes described here have been applied to the hippo source but have not been compiled against the actual ESI headers. Minor further fixes may be required.
 
-2. **Compilation not yet verified.** The changes described here have been applied to the hippo source but have not been compiled against the actual ESI headers. Minor further fixes may be required.
+2. **HippoSolver migration guide for users.** Any application that previously subclassed `Foam::solver` must be updated to subclass `Hippo::HippoSolver` and call `FoamProblem::registerHippoSolver(std::make_unique<MyHippoSolver>(…))` before the first time step.
 
-3. **HippoSolver migration guide for users.** Any application that previously subclassed `Foam::solver` must be updated to subclass `Hippo::HippoSolver` and call `FoamProblem::registerHippoSolver(std::make_unique<MyHippoSolver>(…))` before the first time step.
-
-4. **Crank-Nicolson temporal scheme.** The `removeOldTime()` logic in `FoamDataStore.h` now only clears old times for the Euler scheme (same as before). Crank-Nicolson will still emit a `mooseWarning` on the first time step. This is a pre-existing limitation, not a regression.
+3. **Crank-Nicolson temporal scheme.** The `removeOldTime()` logic in `FoamDataStore.h` now only clears old times for the Euler scheme (same as before). Crank-Nicolson will still emit a `mooseWarning` on the first time step. This is a pre-existing limitation, not a regression.
