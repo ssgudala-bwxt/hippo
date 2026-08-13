@@ -13,9 +13,7 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-application     foamRun;
-
-solver          fluid;
+solver          transferTestSolver;
 
 startFrom       startTime;
 

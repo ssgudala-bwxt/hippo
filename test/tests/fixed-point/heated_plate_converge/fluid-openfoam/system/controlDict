@@ -6,7 +6,9 @@ FoamFile
     object      controlDict;
 }
 
-application     buoyantFoam;
+application     foamRun;
+
+solver          fluid;
 
 startFrom       startTime;
 

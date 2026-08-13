@@ -55,10 +55,13 @@ FoamProblem::initialSetup()
 {
   ExternalProblem::initialSetup();
 
-  if (!_hippo_solver)
+  if (!_hippo_solver && parameters().get<bool>("solve"))
   {
     // No explicit HippoSolver was registered — auto-create an adapter that
     // wraps the ESI Foam::solver named in the controlDict's "solver" entry.
+    // Skip entirely when solve=false (e.g. mesh-only test cases that never
+    // advance the OpenFOAM solution and may use a controlDict with no
+    // registered Foam::solver, such as a standalone application name).
     try
     {
       registerHippoSolver(

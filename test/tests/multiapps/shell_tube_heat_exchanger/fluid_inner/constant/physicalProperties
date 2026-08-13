@@ -3,9 +3,10 @@ FoamFile
     version     2.0;
     format      ascii;
     class       dictionary;
-    location    "constant";
-    object      thermophysicalProperties;
+    object      physicalProperties;
 }
+
+dpdt no;
 
 thermoType
 {
@@ -13,7 +14,7 @@ thermoType
     mixture         pureMixture;
     transport       const;
     thermo          hConst;
-    equationOfState perfectGas;
+    equationOfState perfectFluid;
     specie          specie;
     energy          sensibleEnthalpy;
 }
@@ -22,16 +23,22 @@ mixture
 {
     specie
     {
-        molWeight       24.0999;
+        nMoles      1;
+        molWeight   18;
+    }
+    equationOfState
+    {
+        R           3000;
+        rho0        1027;
     }
     thermodynamics
     {
-        Cp              5000.0;
-        Hf              0;
+        Cp          4195;
+        Hf          0;
     }
     transport
     {
-        mu              0.0002;
-        Pr              0.01;
+        mu          3.645e-4;
+        Pr          2.289;
     }
 }
