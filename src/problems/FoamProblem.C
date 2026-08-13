@@ -2,6 +2,7 @@
 #include "FoamMesh.h"
 #include "FoamProblem.h"
 #include "FoamSolver.h"
+#include "FoamSolverAdapter.h"
 #include "HippoSolver.h"
 #include "hippoUtils.h"
 
@@ -55,9 +56,24 @@ FoamProblem::initialSetup()
   ExternalProblem::initialSetup();
 
   if (!_hippo_solver)
-    mooseError("FoamProblem: no HippoSolver has been registered. "
-               "Call registerHippoSolver() with a concrete HippoSolver subclass "
-               "before the simulation starts.");
+  {
+    // No explicit HippoSolver was registered — auto-create an adapter that
+    // wraps the ESI Foam::solver named in the controlDict's "solver" entry.
+    try
+    {
+      registerHippoSolver(
+          Hippo::FoamSolverAdapter::New(_foam_mesh->mesh()));
+    }
+    catch (const std::exception & e)
+    {
+      mooseError("FoamProblem: no HippoSolver has been registered and auto-creation of "
+                 "FoamSolverAdapter failed: ",
+                 e.what(),
+                 "\n\nEither call registerHippoSolver() with a concrete HippoSolver subclass "
+                 "before the simulation starts, or ensure the controlDict 'solver' entry "
+                 "names a valid ESI solver module.");
+    }
+  }
 
   // Get FoamVariables created by the action AddFoamVariableAction
   TheWarehouse::Query query_vars = theWarehouse().query().condition<AttribSystem>("FoamVariable");

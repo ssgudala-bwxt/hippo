@@ -24,6 +24,7 @@ ADDITIONAL_INCLUDES := \
     -isystem $(FOAM_INCLUDE_ROOT)/thermophysicalModels/basic/lnInclude \
     -isystem $(FOAM_INCLUDE_ROOT)/OSspecific/POSIX/lnInclude \
     -isystem $(FOAM_INCLUDE_ROOT)/functionObjects/field/lnInclude \
+    -isystem $(WM_PROJECT_DIR)/applications/solvers/foamRun \
     $(ADDITIONAL_INCLUDES)
 
 
