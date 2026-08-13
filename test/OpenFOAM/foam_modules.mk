@@ -11,4 +11,11 @@ build_foam_tests:
 	+@$(WMAKE) -s -j $(MOOSE_JOBS) test/OpenFOAM/modules/functionTestSolver/
 	+@$(WMAKE) -s -j $(MOOSE_JOBS) test/OpenFOAM/modules/laplacianTestSolver/
 	+@$(WMAKE) -s -j $(MOOSE_JOBS) test/OpenFOAM/modules/odeTestSolver/
-	+@$(WMAKE) -s -j $(MOOSE_JOBS) test/OpenFOAM/modules/postprocessorTestSolver/
+	+@if [ -f "$$FOAM_LIBBIN/libfluid.so" ] && \
+	     [ -f "$$FOAM_LIBBIN/libfluidSolver.so" ] && \
+	     [ -f "$$FOAM_LIBBIN/libisothermalFluid.so" ] && \
+	     [ -f "$$FOAM_LIBBIN/libcompressibleMomentumTransportModels.so" ]; then \
+	       $(WMAKE) -s -j $(MOOSE_JOBS) test/OpenFOAM/modules/postprocessorTestSolver/; \
+	   else \
+	       echo "Skipping postprocessorTestSolver (missing ESI module libs in $$FOAM_LIBBIN)"; \
+	   fi
