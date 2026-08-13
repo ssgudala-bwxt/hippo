@@ -43,10 +43,10 @@ FoamBCBase::FoamBCBase(const InputParameters & params)
 
   _mesh = &problem->mesh();
 
-  // check that the foam variable exists
-  if (!params.isPrivate("foam_variable") &&
-      !_mesh->foamHasObject<Foam::volScalarField>(_foam_variable))
-    mooseError("There is no OpenFOAM field named '", _foam_variable, "'");
+  // Do not validate foam_variable existence here. In the ESI workflow,
+  // OpenFOAM fields may be registered after BC object construction when
+  // the solver is instantiated. Per-BC impose calls will error naturally
+  // if a field is truly missing.
 
   // check that the boundary is in the FoamMesh
   auto all_subdomain_names = _mesh->getSubdomainNames(_mesh->getSubdomainList());
