@@ -11,7 +11,8 @@ registerMooseObject("hippoApp", FoamDiffusionFluxPostprocessorBC);
 namespace
 {
 std::optional<Foam::scalar>
-readConstantDiffusivity(const Foam::fvMesh & mesh, const Foam::word & name)
+readConstantDiffusivityFromPhysicalPropertiesPP(const Foam::fvMesh & mesh,
+                                                const Foam::word & name)
 {
   Foam::IOdictionary physical_props(
       Foam::IOobject("physicalProperties",
@@ -22,7 +23,7 @@ readConstantDiffusivity(const Foam::fvMesh & mesh, const Foam::word & name)
                      false));
 
   if (physical_props.found(name))
-    return physical_props.lookup<Foam::scalar>(name);
+    return physical_props.get<Foam::scalar>(name);
 
   if (physical_props.found("mixture"))
   {
@@ -31,7 +32,7 @@ readConstantDiffusivity(const Foam::fvMesh & mesh, const Foam::word & name)
     {
       const auto & transport = mixture.subDict("transport");
       if (transport.found(name))
-        return transport.lookup<Foam::scalar>(name);
+        return transport.get<Foam::scalar>(name);
     }
   }
 
@@ -82,7 +83,7 @@ FoamDiffusionFluxPostprocessorBC::imposeBoundaryCondition()
     }
     else
     {
-      auto coeff = readConstantDiffusivity(foam_mesh, _diffusivity);
+      auto coeff = readConstantDiffusivityFromPhysicalPropertiesPP(foam_mesh, _diffusivity);
       if (!coeff.has_value())
         mooseError("Diffusivity '",
                    _diffusivity,
