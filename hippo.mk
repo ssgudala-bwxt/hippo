@@ -6,8 +6,6 @@ FOAM_LIB_DIR := $(FOAM_ROOT_DIR)/lib
 FOAM_INCLUDE_ROOT := $(shell echo $(WM_PROJECT_DIR)/src)
 ADDITIONAL_LIBS := -L$(FOAM_LIB_DIR) \
     -lfiniteVolume \
-    -lfvModels \
-    -lfvConstraints \
     -lmeshTools \
     -lfieldFunctionObjects \
     $(ADDITIONAL_LIBS)

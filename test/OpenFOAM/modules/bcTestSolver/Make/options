@@ -10,11 +10,7 @@ EXE_INC = \
 
 LIB_LIBS = \
     -lsolidThermo \
-    -lsolidThermophysicalTransportModels \
-    -lcoupledThermophysicalTransportModels \
     -lspecie \
     -lfiniteVolume \
     -lmeshTools \
-    -lsampling \
-    -lfvModels \
-    -lfvConstraints
+    -lsampling

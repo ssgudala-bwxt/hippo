@@ -19,5 +19,4 @@ LIB_LIBS = \
     -lfluidSolver \
     -lisothermalFluid \
     -lfluidThermophysicalModels \
-    -lcompressibleMomentumTransportModels \
-    -lcoupledThermophysicalTransportModels
+    -lcompressibleMomentumTransportModels
