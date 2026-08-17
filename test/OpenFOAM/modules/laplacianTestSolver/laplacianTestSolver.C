@@ -1,137 +1,111 @@
-/*---------------------------------------------------------------------------*\
-  =========                 |
-  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
-   \\    /   O peration     | Website:  https://openfoam.org
-    \\  /    A nd           | Copyright (C) 2022-2024 OpenFOAM Foundation
-     \\/     M anipulation  |
--------------------------------------------------------------------------------
-License
-    This file is part of OpenFOAM.
-
-    OpenFOAM is free software: you can redistribute it and/or modify it
-    under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    OpenFOAM is distributed in the hope that it will be useful, but WITHOUT
-    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-    FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-    for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with OpenFOAM.  If not, see <http://www.gnu.org/licenses/>.
-
-\*---------------------------------------------------------------------------*/
-
 #include "dimensionSet.H"
 #include "dimensionSets.H"
 #include "dimensionedType.H"
-#include "laplacianTestSolver.H"
+#include "HippoSolverRegistry.h"
 #include "fvcSurfaceIntegrate.H"
-#include "fvMeshMover.H"
-#include "localEulerDdtScheme.H"
-#include "addToRunTimeSelectionTable.H"
-#include "fvmLaplacian.H"
 #include "fvConstraints.H"
+#include "fvMeshMover.H"
+#include "fvModels.H"
+#include "fvmLaplacian.H"
+#include "laplacianTestSolver.H"
+#include "localEulerDdtScheme.H"
 #include "scalar.H"
 #include "volFieldsFwd.H"
 
-// * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
-
-namespace Foam
+namespace
 {
-namespace solvers
+Hippo::HippoSolver *
+createLaplacianTestSolver(Foam::fvMesh & mesh)
 {
-defineTypeNameAndDebug(laplacianTestSolver, 0);
-addToRunTimeSelectionTable(solver, laplacianTestSolver, fvMesh);
-}
+  return new Foam::solvers::laplacianTestSolver(mesh);
 }
 
-// * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
-
-// * * * * * * * * * * * * * Protected Member Functions  * * * * * * * * * * //
+[[maybe_unused]] const bool registered_laplacian_test_solver =
+    Hippo::registerSolverModule("laplacianTestSolver", createLaplacianTestSolver);
+} // namespace
 
 bool
 Foam::solvers::laplacianTestSolver::dependenciesModified() const
 {
-  return runTime.controlDict().modified();
+  return runTime().controlDict().modified();
 }
 
 bool
 Foam::solvers::laplacianTestSolver::read()
 {
-  solver::read();
-
-  maxDeltaT_ = runTime.controlDict().found("maxDeltaT")
-                   ? runTime.controlDict().lookup<scalar>("maxDeltaT", runTime.userUnits())
+  maxDeltaT_ = runTime().controlDict().found("maxDeltaT")
+                   ? runTime().controlDict().lookup<scalar>("maxDeltaT", runTime().userUnits())
                    : vGreat;
 
   return true;
 }
 
-// * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
-
 Foam::solvers::laplacianTestSolver::laplacianTestSolver(fvMesh & mesh)
-  : solver(mesh),
+  : Hippo::HippoSolver(mesh),
+    maxDeltaT_(vGreat),
     T_(IOobject("T", mesh.time().name(), mesh, IOobject::NO_READ, IOobject::AUTO_WRITE), mesh),
     kappa_(IOobject("kappa", mesh.time().name(), mesh, IOobject::NO_READ, IOobject::AUTO_WRITE),
            mesh,
            dimensionedScalar(dimensionSet(0, 0, 0, 0, 0), 1.)),
+    pimple_(mesh),
     T(T_),
     kappa(kappa_)
 {
-  // Read the controls
   read();
 }
-
-// * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * * //
 
 Foam::scalar
 Foam::solvers::laplacianTestSolver::maxDeltaT() const
 {
-  return min(fvModels().maxDeltaT(), maxDeltaT_);
+  return min(Foam::fvModels::New(mesh()).maxDeltaT(), maxDeltaT_);
 }
 
 void
 Foam::solvers::laplacianTestSolver::preSolve()
 {
-  fvModels().preUpdateMesh();
+  if (dependenciesModified())
+    read();
 
-  // Update the mesh for topology change, mesh to mesh mapping
-  mesh_.update();
+  Foam::fvModels::New(mesh()).preUpdateMesh();
+  mesh().update();
 }
 
 void
-Foam::solvers::laplacianTestSolver::moveMesh()
+Foam::solvers::laplacianTestSolver::moveMeshIfNeeded()
 {
-  if (pimple.firstIter() || pimple.moveMeshOuterCorrectors())
+  if (pimple_.firstIter() || pimple_.moveMeshOuterCorrectors())
   {
-    if (!mesh_.mover().solidBody())
-    {
-      FatalErrorInFunction << "Region " << name() << " of type " << type()
-                           << " does not support non-solid body mesh motion" << exit(FatalError);
-    }
+    if (!mesh().mover().solidBody())
+      FatalErrorInFunction << "Solver laplacianTestSolver does not support non-solid body mesh motion"
+                           << exit(FatalError);
 
-    mesh_.move();
+    mesh().move();
   }
 }
 
 void
 Foam::solvers::laplacianTestSolver::thermophysicalPredictor()
 {
-  fvModels().correct();
+  Foam::fvModels::New(mesh()).correct();
 
   dimensionedScalar C(dimensionSet(0, -2, 0, 0, 0), 1.);
-  while (pimple.correctNonOrthogonal())
+  while (pimple_.correctNonOrthogonal())
   {
-    // creates time dependent Poisson equation to check fixed-point when a
-    // boundary value problem is solved
     fvScalarMatrix TEqn(Foam::fvm::laplacian(T_, "T") + C * T_.oldTime());
 
-    fvConstraints().constrain(TEqn);
+    auto & constraints = Foam::fvConstraints::New(mesh());
+    constraints.constrain(TEqn);
     TEqn.solve();
-    fvConstraints().constrain(T_);
+    constraints.constrain(T_);
   }
 }
 
-// ************************************************************************* //
+void
+Foam::solvers::laplacianTestSolver::solve()
+{
+  while (pimple_.loop())
+  {
+    moveMeshIfNeeded();
+    thermophysicalPredictor();
+  }
+}

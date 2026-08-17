@@ -1,157 +1,91 @@
-/*---------------------------------------------------------------------------*\
-  =========                 |
-  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
-   \\    /   O peration     | Website:  https://openfoam.org
-    \\  /    A nd           | Copyright (C) 2022-2024 OpenFOAM Foundation
-     \\/     M anipulation  |
--------------------------------------------------------------------------------
-License
-    This file is part of OpenFOAM.
-
-    OpenFOAM is free software: you can redistribute it and/or modify it
-    under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    OpenFOAM is distributed in the hope that it will be useful, but WITHOUT
-    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-    FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-    for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with OpenFOAM.  If not, see <http://www.gnu.org/licenses/>.
-
-\*---------------------------------------------------------------------------*/
-
 #include "dimensionSets.H"
 #include "fvMesh.H"
-#include "transferTestSolver.H"
 #include "fvMeshMover.H"
-#include "addToRunTimeSelectionTable.H"
+#include "fvModels.H"
+#include "HippoSolverRegistry.h"
+#include "transferTestSolver.H"
 
-// * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
-
-namespace Foam
+namespace
 {
-namespace solvers
+Hippo::HippoSolver *
+createTransferTestSolver(Foam::fvMesh & mesh)
 {
-defineTypeNameAndDebug(transferTestSolver, 0);
-addToRunTimeSelectionTable(solver, transferTestSolver, fvMesh);
-}
+  return new Foam::solvers::transferTestSolver(mesh);
 }
 
-// * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
-
-// * * * * * * * * * * * * * Protected Member Functions  * * * * * * * * * * //
+[[maybe_unused]] const bool registered_transfer_test_solver =
+    Hippo::registerSolverModule("transferTestSolver", createTransferTestSolver);
+} // namespace
 
 bool
 Foam::solvers::transferTestSolver::dependenciesModified() const
 {
-  return runTime.controlDict().modified();
+  return runTime().controlDict().modified();
 }
 
 bool
 Foam::solvers::transferTestSolver::read()
 {
-  solver::read();
-
-  maxDeltaT_ = runTime.controlDict().found("maxDeltaT")
-                   ? runTime.controlDict().lookup<scalar>("maxDeltaT", runTime.userUnits())
+  maxDeltaT_ = runTime().controlDict().found("maxDeltaT")
+                   ? runTime().controlDict().lookup<scalar>("maxDeltaT", runTime().userUnits())
                    : vGreat;
 
   return true;
 }
 
-// * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
-// Solver based on solid.C module
-Foam::solvers::transferTestSolver::transferTestSolver(fvMesh & mesh, autoPtr<solidThermo> thermoPtr)
-  : solver(mesh),
-
-    thermoPtr_(thermoPtr),
+Foam::solvers::transferTestSolver::transferTestSolver(fvMesh & mesh)
+  : Hippo::HippoSolver(mesh),
+    maxDeltaT_(vGreat),
+    thermoPtr_(solidThermo::New(mesh)),
     thermo_(thermoPtr_()),
-
     T_(IOobject("T", mesh.time().name(), mesh, IOobject::NO_READ, IOobject::AUTO_WRITE), mesh),
-
-    thermophysicalTransport(solidThermophysicalTransportModel::New(thermo_)),
+    thermophysicalTransport_(solidThermophysicalTransportModel::New(thermo_)),
+    pimple_(mesh),
     thermo(thermo_),
     T(T_)
 {
   thermo.validate("solid", "h", "e");
-}
-
-Foam::solvers::transferTestSolver::transferTestSolver(fvMesh & mesh)
-  : transferTestSolver(mesh, solidThermo::New(mesh))
-{
-  // Read the controls
   read();
 }
-
-// * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * //
-
-Foam::solvers::transferTestSolver::~transferTestSolver() {}
-
-// * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * * //
 
 Foam::scalar
 Foam::solvers::transferTestSolver::maxDeltaT() const
 {
-  return min(fvModels().maxDeltaT(), maxDeltaT_);
+  return min(Foam::fvModels::New(mesh()).maxDeltaT(), maxDeltaT_);
 }
 
 void
 Foam::solvers::transferTestSolver::preSolve()
 {
-  fvModels().preUpdateMesh();
+  if (dependenciesModified())
+    read();
 
-  // Update the mesh for topology change, mesh to mesh mapping
-  mesh_.update();
+  Foam::fvModels::New(mesh()).preUpdateMesh();
+  mesh().update();
 }
 
 void
-Foam::solvers::transferTestSolver::moveMesh()
+Foam::solvers::transferTestSolver::moveMeshIfNeeded()
 {
-  if (pimple.firstIter() || pimple.moveMeshOuterCorrectors())
+  if (pimple_.firstIter() || pimple_.moveMeshOuterCorrectors())
   {
-    if (!mesh_.mover().solidBody())
-    {
-      FatalErrorInFunction << "Region " << name() << " of type " << type()
-                           << " does not support non-solid body mesh motion" << exit(FatalError);
-    }
+    if (!mesh().mover().solidBody())
+      FatalErrorInFunction << "Solver transferTestSolver does not support non-solid body mesh motion"
+                           << exit(FatalError);
 
-    mesh_.move();
+    mesh().move();
   }
-}
-
-void
-Foam::solvers::transferTestSolver::motionCorrector()
-{
-}
-
-void
-Foam::solvers::transferTestSolver::prePredictor()
-{
-}
-
-void
-Foam::solvers::transferTestSolver::momentumPredictor()
-{
 }
 
 void
 Foam::solvers::transferTestSolver::thermophysicalPredictor()
 {
-  // To set temperature for testing, internal energy must be set. The
-  // thermo_.correct() call calculates Temperature.
-
-  // Get e and Cv
   volScalarField & e = thermo_.he();
   const volScalarField & Cv = thermo_.Cv();
 
-  // Set e to Cv*(xy + yz + xz)t which gives a non-uniform be first order value of wall heat flux at
-  // all boundaries.
   dimensioned<Foam::scalar> t(
-      "t", T_.dimensions() / (dimLength * dimLength), mesh_.time().userTimeValue());
-  auto & coords = mesh_.C();
+      "t", T_.dimensions() / (dimLength * dimLength), mesh().time().userTimeValue());
+  auto & coords = mesh().C();
   e = Cv * (dimensionedScalar(T.dimensions(), 0.01) +
             (coords.component(0) * coords.component(1) + coords.component(1) * coords.component(2) +
              coords.component(2) * coords.component(0)) *
@@ -161,18 +95,11 @@ Foam::solvers::transferTestSolver::thermophysicalPredictor()
 }
 
 void
-Foam::solvers::transferTestSolver::pressureCorrector()
+Foam::solvers::transferTestSolver::solve()
 {
+  while (pimple_.loop())
+  {
+    moveMeshIfNeeded();
+    thermophysicalPredictor();
+  }
 }
-
-void
-Foam::solvers::transferTestSolver::postCorrector()
-{
-}
-
-void
-Foam::solvers::transferTestSolver::postSolve()
-{
-}
-
-// ************************************************************************* //

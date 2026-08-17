@@ -2,8 +2,8 @@
 #include "FoamMesh.h"
 #include "FoamProblem.h"
 #include "FoamSolver.h"
-#include "FoamSolverAdapter.h"
 #include "HippoSolver.h"
+#include "HippoSolverRegistry.h"
 #include "hippoUtils.h"
 
 #include "Attributes.h"
@@ -57,24 +57,19 @@ FoamProblem::initialSetup()
 
   if (!_hippo_solver && parameters().get<bool>("solve"))
   {
-    // No explicit HippoSolver was registered — auto-create an adapter that
-    // wraps the ESI Foam::solver named in the controlDict's "solver" entry.
-    // Skip entirely when solve=false (e.g. mesh-only test cases that never
-    // advance the OpenFOAM solution and may use a controlDict with no
-    // registered Foam::solver, such as a standalone application name).
     try
     {
-      registerHippoSolver(
-          Hippo::FoamSolverAdapter::New(_foam_mesh->fvMesh()));
+      const auto solver_name =
+          _foam_mesh->fvMesh().time().controlDict().lookup<Foam::word>("solver");
+      registerHippoSolver(Hippo::HippoSolverRegistry::create(solver_name, _foam_mesh->fvMesh()));
     }
     catch (const std::exception & e)
     {
-      mooseError("FoamProblem: no HippoSolver has been registered and auto-creation of "
-                 "FoamSolverAdapter failed: ",
+      mooseError("FoamProblem: no HippoSolver has been registered and automatic lookup failed: ",
                  e.what(),
                  "\n\nEither call registerHippoSolver() with a concrete HippoSolver subclass "
                  "before the simulation starts, or ensure the controlDict 'solver' entry "
-                 "names a valid ESI solver module.");
+                 "names a loadable Hippo solver module library.");
     }
   }
 
