@@ -3,9 +3,13 @@
 #include "HippoSolver.h"
 
 #include <fvMesh.H>
-#include <solver.H>
-
 #include <memory>
+#include <string>
+
+// Forward-declare Foam::solver so this header compiles without knowing
+// where solver.H lives (its path varies across ESI v2606 installations).
+// The full definition is included in FoamSolverAdapter.C.
+namespace Foam { class solver; }
 
 namespace Hippo
 {
@@ -29,78 +33,26 @@ class FoamSolverAdapter : public HippoSolver
 public:
   /**
    * Construct by taking ownership of an existing `Foam::solver`.
-   *
-   * @param mesh         the OpenFOAM fvMesh (already constructed)
-   * @param foam_solver  owning pointer to the concrete ESI solver instance
    */
-  FoamSolverAdapter(Foam::fvMesh & mesh, std::unique_ptr<Foam::solver> foam_solver)
-    : HippoSolver(mesh), _foam_solver(std::move(foam_solver))
-  {
-  }
+  FoamSolverAdapter(Foam::fvMesh & mesh, std::unique_ptr<Foam::solver> foam_solver);
+
+  // Destructor must be defined in the .C file where Foam::solver is complete.
+  ~FoamSolverAdapter() override;
 
   /**
    * Convenience factory: read the solver name from the mesh's controlDict and
    * instantiate via the ESI runtime selection table.
-   *
-   * @param mesh  fvMesh whose `controlDict` contains a `solver` entry
    */
-  static std::unique_ptr<FoamSolverAdapter> New(Foam::fvMesh & mesh)
-  {
-    const Foam::word solver_name =
-        mesh.time().controlDict().lookup<Foam::word>("solver");
-
-    auto foam_solver = Foam::solver::New(solver_name, mesh);
-    return std::make_unique<FoamSolverAdapter>(mesh, std::move(foam_solver));
-  }
+  static std::unique_ptr<FoamSolverAdapter> New(Foam::fvMesh & mesh);
 
   // --- HippoSolver interface ---
-
-  void preSolve() override
-  {
-    _foam_solver->preSolve();
-  }
-
-  void moveMesh() override
-  {
-    _foam_solver->moveMesh();
-  }
-
-  /**
-   * Run the inner PIMPLE corrector loop for one time step.
-   *
-   * ESI's `Foam::solver` exposes per-phase hooks rather than a single
-   * `solve()`.  We replicate what `foamRun` does: one PIMPLE outer-corrector
-   * loop calling `prePredictor → momentumPredictor → thermophysicalPredictor
-   * → pressureCorrector → postCorrector` then `motionCorrector`.
-   */
-  void solve() override
-  {
-    auto & pimple = _foam_solver->pimple;
-
-    while (pimple.loop())
-    {
-      _foam_solver->prePredictor();
-      _foam_solver->momentumPredictor();
-      _foam_solver->thermophysicalPredictor();
-      _foam_solver->pressureCorrector();
-      _foam_solver->postCorrector();
-    }
-
-    _foam_solver->motionCorrector();
-  }
-
-  void postSolve() override
-  {
-    _foam_solver->postSolve();
-  }
-
-  Foam::scalar maxDeltaT() const override
-  {
-    return _foam_solver->maxDeltaT();
-  }
+  void preSolve() override;
+  void moveMesh() override;
+  void solve() override;
+  void postSolve() override;
+  Foam::scalar maxDeltaT() const override;
 
   // --- Access to the underlying ESI solver ---
-
   Foam::solver & foamSolver() { return *_foam_solver; }
   const Foam::solver & foamSolver() const { return *_foam_solver; }
 
