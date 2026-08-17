@@ -65,7 +65,7 @@ FoamProblem::initialSetup()
     try
     {
       registerHippoSolver(
-          Hippo::FoamSolverAdapter::New(_foam_mesh->mesh()));
+          Hippo::FoamSolverAdapter::New(_foam_mesh->fvMesh()));
     }
     catch (const std::exception & e)
     {
