@@ -59,8 +59,8 @@ FoamProblem::initialSetup()
   {
     try
     {
-      const auto solver_name =
-          _foam_mesh->fvMesh().time().controlDict().lookup<Foam::word>("solver");
+      const Foam::word solver_name(
+          _foam_mesh->fvMesh().time().controlDict().lookup("solver"));
       registerHippoSolver(Hippo::HippoSolverRegistry::create(solver_name, _foam_mesh->fvMesh()));
     }
     catch (const std::exception & e)
