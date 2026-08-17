@@ -1,5 +1,4 @@
 #include "functionTestSolver.H"
-#include "HippoSolverRegistry.h"
 #include "fvMeshMover.H"
 #include "fvModels.H"
 #include "fvcDdt.H"
@@ -13,7 +12,6 @@ createFunctionTestSolver(Foam::fvMesh & mesh)
 }
 
 [[maybe_unused]] const bool registered_function_test_solver =
-    Hippo::registerSolverModule("functionTestSolver", createFunctionTestSolver);
 } // namespace
 
 bool
@@ -95,4 +93,14 @@ Foam::solvers::functionTestSolver::solve()
     moveMeshIfNeeded();
     thermophysicalPredictor();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Hippo factory symbol: resolved by HippoSolverRegistry via dlsym after
+// dlopen("libfunctionTestSolver.so").  No dependency on hippo symbols required.
+// ---------------------------------------------------------------------------
+extern "C" Hippo::HippoSolver *
+hippo_solver_factory_functionTestSolver(Foam::fvMesh & mesh)
+{
+  return new Foam::solvers::functionTestSolver(mesh);
 }

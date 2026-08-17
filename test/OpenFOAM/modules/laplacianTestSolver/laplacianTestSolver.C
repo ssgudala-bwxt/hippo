@@ -1,7 +1,6 @@
 #include "dimensionSet.H"
 #include "dimensionSets.H"
 #include "dimensionedType.H"
-#include "HippoSolverRegistry.h"
 #include "fvcSurfaceIntegrate.H"
 #include "fvConstraints.H"
 #include "fvMeshMover.H"
@@ -21,7 +20,6 @@ createLaplacianTestSolver(Foam::fvMesh & mesh)
 }
 
 [[maybe_unused]] const bool registered_laplacian_test_solver =
-    Hippo::registerSolverModule("laplacianTestSolver", createLaplacianTestSolver);
 } // namespace
 
 bool
@@ -108,4 +106,14 @@ Foam::solvers::laplacianTestSolver::solve()
     moveMeshIfNeeded();
     thermophysicalPredictor();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Hippo factory symbol: resolved by HippoSolverRegistry via dlsym after
+// dlopen("liblaplacianTestSolver.so").  No dependency on hippo symbols required.
+// ---------------------------------------------------------------------------
+extern "C" Hippo::HippoSolver *
+hippo_solver_factory_laplacianTestSolver(Foam::fvMesh & mesh)
+{
+  return new Foam::solvers::laplacianTestSolver(mesh);
 }

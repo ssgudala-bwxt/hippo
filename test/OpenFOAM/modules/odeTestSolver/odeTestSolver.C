@@ -1,7 +1,6 @@
 #include "dimensionSet.H"
 #include "dimensionSets.H"
 #include "dimensionedType.H"
-#include "HippoSolverRegistry.h"
 #include "fvcSurfaceIntegrate.H"
 #include "fvConstraints.H"
 #include "fvMeshMover.H"
@@ -22,7 +21,6 @@ createOdeTestSolver(Foam::fvMesh & mesh)
 }
 
 [[maybe_unused]] const bool registered_ode_test_solver =
-    Hippo::registerSolverModule("odeTestSolver", createOdeTestSolver);
 } // namespace
 
 bool
@@ -109,4 +107,14 @@ Foam::solvers::odeTestSolver::solve()
     moveMeshIfNeeded();
     thermophysicalPredictor();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Hippo factory symbol: resolved by HippoSolverRegistry via dlsym after
+// dlopen("libodeTestSolver.so").  No dependency on hippo symbols required.
+// ---------------------------------------------------------------------------
+extern "C" Hippo::HippoSolver *
+hippo_solver_factory_odeTestSolver(Foam::fvMesh & mesh)
+{
+  return new Foam::solvers::odeTestSolver(mesh);
 }

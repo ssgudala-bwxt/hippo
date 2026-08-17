@@ -5,41 +5,32 @@
 #include <memory>
 #include <string>
 
-#if defined(_WIN32)
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
-
 namespace Hippo
 {
 namespace HippoSolverRegistry
 {
+
+/// Raw factory function pointer type.
 using Factory = HippoSolver * (*)(Foam::fvMesh & mesh);
 
+/**
+ * Register a factory for a named solver.
+ * Called from HippoSolverRegistry.C after dlopen + dlsym.
+ */
 void registerFactory(const std::string & name, Factory factory);
+
+/**
+ * Create a HippoSolver by name.
+ *
+ * If the name is not already registered, attempts to dlopen
+ * lib<name>.so from $FOAM_USER_LIBBIN / $FOAM_LIBBIN and resolve the
+ * symbol  hippo_solver_factory_<name>  (an extern "C" function returning
+ * HippoSolver*).  Throws std::runtime_error if the solver cannot be found.
+ */
 std::unique_ptr<HippoSolver> create(const std::string & name, Foam::fvMesh & mesh);
+
 bool hasFactory(const std::string & name);
-}
 
-inline bool
-registerSolverModule(const char * name, HippoSolverRegistry::Factory factory)
-{
-  using RegisterFn = void (*)(const char *, HippoSolverRegistry::Factory);
-
-#if defined(_WIN32)
-  auto * fn =
-      reinterpret_cast<RegisterFn>(GetProcAddress(GetModuleHandleA(nullptr), "hippoRegisterSolver"));
-#else
-  auto * fn = reinterpret_cast<RegisterFn>(dlsym(RTLD_DEFAULT, "hippoRegisterSolver"));
-#endif
-
-  if (!fn)
-    return false;
-
-  fn(name, factory);
-  return true;
-}
+} // namespace HippoSolverRegistry
 } // namespace Hippo
 
-extern "C" void hippoRegisterSolver(const char * name, Hippo::HippoSolverRegistry::Factory factory);

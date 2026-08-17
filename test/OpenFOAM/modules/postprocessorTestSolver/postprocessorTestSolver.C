@@ -1,5 +1,4 @@
 #include "DimensionedField.H"
-#include "HippoSolverRegistry.h"
 #include "dimensionSets.H"
 #include "dimensionedScalar.H"
 #include "dimensionedVector.H"
@@ -21,7 +20,6 @@ createPostprocessorTestSolver(Foam::fvMesh & mesh)
 }
 
 [[maybe_unused]] const bool registered_postprocessor_test_solver =
-    Hippo::registerSolverModule("postprocessorTestSolver", createPostprocessorTestSolver);
 } // namespace
 
 bool
@@ -113,4 +111,14 @@ Foam::solvers::postprocessorTestSolver::solve()
     moveMeshIfNeeded();
     thermophysicalPredictor();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Hippo factory symbol: resolved by HippoSolverRegistry via dlsym after
+// dlopen("libpostprocessorTestSolver.so").  No dependency on hippo symbols required.
+// ---------------------------------------------------------------------------
+extern "C" Hippo::HippoSolver *
+hippo_solver_factory_postprocessorTestSolver(Foam::fvMesh & mesh)
+{
+  return new Foam::solvers::postprocessorTestSolver(mesh);
 }

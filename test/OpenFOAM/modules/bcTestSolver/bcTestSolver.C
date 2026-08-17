@@ -1,5 +1,4 @@
 #include "bcTestSolver.H"
-#include "HippoSolverRegistry.h"
 #include "dimensionSets.H"
 #include "fvConstraints.H"
 #include "fvMesh.H"
@@ -16,7 +15,6 @@ createBcTestSolver(Foam::fvMesh & mesh)
 }
 
 [[maybe_unused]] const bool registered_bc_test_solver =
-    Hippo::registerSolverModule("bcTestSolver", createBcTestSolver);
 } // namespace
 
 bool
@@ -98,4 +96,14 @@ Foam::solvers::bcTestSolver::solve()
     moveMeshIfNeeded();
     thermophysicalPredictor();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Hippo factory symbol: resolved by HippoSolverRegistry via dlsym after
+// dlopen("libbcTestSolver.so").  No dependency on hippo symbols required.
+// ---------------------------------------------------------------------------
+extern "C" Hippo::HippoSolver *
+hippo_solver_factory_bcTestSolver(Foam::fvMesh & mesh)
+{
+  return new Foam::solvers::bcTestSolver(mesh);
 }

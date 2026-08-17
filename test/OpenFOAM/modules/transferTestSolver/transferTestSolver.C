@@ -2,7 +2,6 @@
 #include "fvMesh.H"
 #include "fvMeshMover.H"
 #include "fvModels.H"
-#include "HippoSolverRegistry.h"
 #include "transferTestSolver.H"
 
 namespace
@@ -14,7 +13,6 @@ createTransferTestSolver(Foam::fvMesh & mesh)
 }
 
 [[maybe_unused]] const bool registered_transfer_test_solver =
-    Hippo::registerSolverModule("transferTestSolver", createTransferTestSolver);
 } // namespace
 
 bool
@@ -102,4 +100,14 @@ Foam::solvers::transferTestSolver::solve()
     moveMeshIfNeeded();
     thermophysicalPredictor();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Hippo factory symbol: resolved by HippoSolverRegistry via dlsym after
+// dlopen("libtransferTestSolver.so").  No dependency on hippo symbols required.
+// ---------------------------------------------------------------------------
+extern "C" Hippo::HippoSolver *
+hippo_solver_factory_transferTestSolver(Foam::fvMesh & mesh)
+{
+  return new Foam::solvers::transferTestSolver(mesh);
 }
