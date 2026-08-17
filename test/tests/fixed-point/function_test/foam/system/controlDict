@@ -17,6 +17,8 @@ application     foamRun;
 
 solver          functionTestSolver;
 
+libs            ("libfunctionTestSolver.so");
+
 startFrom       startTime;
 
 startTime       0;

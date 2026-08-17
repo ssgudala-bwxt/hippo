@@ -15,6 +15,8 @@ FoamFile
 
 solver          postprocessorTestSolver;
 
+libs            ("libpostprocessorTestSolver.so");
+
 startFrom       startTime;
 
 startTime       0;

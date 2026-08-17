@@ -17,6 +17,8 @@ application     foamRun;
 
 solver          laplacianTestSolver;
 
+libs            ("liblaplacianTestSolver.so");
+
 startFrom       startTime;
 
 startTime       0;
