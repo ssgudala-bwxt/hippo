@@ -34,6 +34,10 @@ ADDITIONAL_CPPFLAGS += $(shell echo -D$(WM_ARCH) \
                                     -DNoRepository -ftemplate-depth-100 \
                                     -Xlinker --add-needed -Xlinker --no-as-needed -fuse-ld=bfd )
 
+# Export all symbols from the hippo executable so that dlopen'd solver .so
+# files can find hippoRegisterSolver via dlsym(RTLD_DEFAULT, ...).
+ADDITIONAL_LDFLAGS += -rdynamic
+
 
 
 
