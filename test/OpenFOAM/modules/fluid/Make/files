@@ -1,0 +1,3 @@
+fluid.C
+
+LIB = $(FOAM_USER_LIBBIN)/libfluid

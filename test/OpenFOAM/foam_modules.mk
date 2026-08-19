@@ -21,3 +21,10 @@ ifneq ($(FLUID_THERMO_TRANSPORT_LIB),)
 else
 	$(info Skipping postprocessorTestSolver: libfluidThermophysicalTransportModels not found)
 endif
+
+FLUID_THERMO_LIB := $(wildcard $(FOAM_LIBBIN)/libfluidThermophysicalModels.so)
+ifneq ($(FLUID_THERMO_LIB),)
+	+@$(WMAKE) -s -j $(MOOSE_JOBS) test/OpenFOAM/modules/fluid/
+else
+	$(info Skipping fluid: libfluidThermophysicalModels.so not found)
+endif
