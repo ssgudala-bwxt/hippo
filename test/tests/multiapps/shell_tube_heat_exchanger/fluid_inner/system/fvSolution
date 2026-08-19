@@ -23,23 +23,27 @@ solvers
 
     "rho.*"
     {
-        solver          PCG;
-        preconditioner  DIC;
-        tolerance       0;
-        relTol          0;
+        solver          diagonal;
     }
 
     p_rgh
     {
-        solver          PCG;
-        preconditioner  DIC;
-        tolerance       1e-8;
+        solver          GAMG;
+        smoother        GaussSeidel;
+        nPostSweeps     2;
+        cacheAgglomeration true;
+        agglomerator    faceAreaPair;
+        nCellsInCoarsestLevel 10;
+        mergeLevels     1;
+        tolerance       1e-7;
         relTol          0.01;
     }
 
     p_rghFinal
     {
-        $p_rgh;
+        solver          PCG;
+        preconditioner  DIC;
+        tolerance       1e-8;
         relTol          0;
     }
 
@@ -92,3 +96,4 @@ relaxationFactors
         h               0.99;
     }
 }
+
