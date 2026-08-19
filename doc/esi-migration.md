@@ -786,3 +786,112 @@ non-existent `"icoFoam"` `Foam::solver`.
 2. **HippoSolver migration guide for users.** Any application that previously subclassed `Foam::solver` must be updated to subclass `Hippo::HippoSolver` and call `FoamProblem::registerHippoSolver(std::make_unique<MyHippoSolver>(…))` before the first time step. Alternatively, if an ESI `Foam::solver` module already implements the desired physics (e.g. `solid`, `fluid`), just set the controlDict `solver` entry — `FoamSolverAdapter` will auto-register it with no C++ changes required.
 
 3. **Crank-Nicolson temporal scheme.** The `removeOldTime()` logic in `FoamDataStore.h` now only clears old times for the Euler scheme (same as before). Crank-Nicolson will still emit a `mooseWarning` on the first time step. This is a pre-existing limitation, not a regression.
+
+
+---
+
+## 23. Validated Integration Tests (ESI v2606)
+
+The following tests were run to completion on the system against the
+ESI v2606 build of hippo and compared against Foundation OpenFOAM-12 baselines.
+
+### 23.1 `flow_over_heated_plate` -- transient PIMPLE, 1 MPI process
+
+- **Physics:** Buoyant compressible flow over a heated wall, coupled to MOOSE
+  heat conduction (TransientMultiApp)
+- **Solver mode:** PIMPLE (transient), `nCorrectors 2`
+- **Steps run:** 40
+- **Status:** PASS
+
+Step 40 comparison:
+
+| Quantity | Foundation | ESI |
+|----------|-----------|-----|
+| Ux iterations | 2 | 2 |
+| Uy iterations | 3 | 3 |
+| h iterations | 15 | 15 |
+| p_rgh first solve | ~10 GAMG iters | ~10 GAMG iters |
+| p_rghFinal solve | ~223 DICPCG iters | ~223 DICPCG iters |
+| ClockTime / step | 1.63 s | 1.81 s (+11%) |
+
+Difference in initial residuals (~2x) is expected: ESI normalises by a
+different reference value in fvMatrix::solveSegregated. Absolute residuals
+converge to the same tolerances.
+
+### 23.2 `shell_tube_heat_exchanger` -- steady SIMPLE, 1 MPI process
+
+- **Physics:** Inner-tube and outer-shell fluid domains (buoyant SIMPLE /
+  steady-state) coupled to a MOOSE solid via heat-flux BCs
+  (wallHeatFlux FunctionObject)
+- **Solver mode:** SIMPLE steady (detected via mesh.schemes().steady())
+- **Steps run:** 10
+- **Status:** PASS
+
+Step 10 comparison (inner / outer):
+
+| Quantity | Foundation | ESI |
+|----------|-----------|-----|
+| Ux iterations (inner) | 3 | 2 |
+| h iterations (inner) | 93 | 100 |
+| p_rgh iterations (inner) | 383 (DICPCG) | 32 (GAMG) |
+| wallHeatFlux integ -- inner | N/A logged | +21 162 W |
+| wallHeatFlux integ -- outer | N/A logged | -25 610 W |
+| ClockTime (inner/outer) | 114 s / 126 s | 168 s / 181 s |
+
+### 23.3 `shell_tube_heat_exchanger` -- steady SIMPLE, 2 MPI processes
+
+- **Physics:** Same as 23.2, decomposed with decomposePar (scotch, 2 subdomains)
+- **Processes:** 2 (srun --mpi=pmi2 -n 2)
+- **Steps run:** 10
+- **Status:** PASS
+
+Step 10 comparison (inner / outer):
+
+| Quantity | ESI 1-proc | ESI 2-proc |
+|----------|-----------|-----------|
+| h iterations (inner) | 100 | 90 |
+| p_rgh iterations (inner) | 32 (GAMG) | 29 (GAMG) |
+| wallHeatFlux integ -- inner | +21 162 W | +21 241 W (<0.4%) |
+| wallHeatFlux integ -- outer | -25 610 W | -25 634 W (<0.1%) |
+| ClockTime (inner/outer) | 168 s / 181 s | 83 s / 90 s (~2x speedup) |
+
+The 2-process run required three bug fixes (committed on branch `ESI-no-build`):
+
+1. **storePrevIter() before relax()** (ebfa4a3): ESI v2606
+   GeometricField::relax() calls prevIter() internally. With pimpleControl
+   in steady mode this is not called automatically -- must be explicit before
+   each relax() call in the SIMPLE pEqn / rho update.
+
+2. **Singleton Foam::argList** (035a55a / cf7ea8d): ESI v2606 added a
+   FatalError in UPstream::setHostCommunicators when called more than once per
+   process. The original code constructed a new Foam::argList (and thus called
+   UPstream::init -> setHostCommunicators) for every FoamRuntime instance.
+   Fixed by making _s_arg_list a static unique_ptr constructed only on the
+   first FoamRuntime call.
+
+3. **Processor-local caseName for subsequent FoamRuntime** (e4466af):
+   The Foam::Time(controlDictName, rootPath, caseName) constructor sets
+   processorCase_=false by default. This causes Time::path() to return the
+   global case directory instead of processorN/, so fvMesh cannot find its
+   decomposed polyMesh data. Fixed by appending processorN to caseName before
+   passing to the constructor, which causes TimePaths::detectProcessorCase()
+   to correctly set processorCase_=true and globalCaseName_=caseName.
+
+### 23.4 ESI-specific configuration required for shell_tube cases
+
+Each fluid case directory requires the following compatibility shims
+(not present in the original Foundation test case):
+
+| File | Purpose |
+|------|---------|
+| constant/thermophysicalProperties | rhoThermo::New() reads this (ESI) instead of physicalProperties |
+| constant/turbulenceProperties | turbulenceModel::New() reads this (ESI) instead of momentumTransport |
+
+fvSolution changes vs Foundation:
+
+| Setting | Foundation | ESI |
+|---------|-----------|-----|
+| p_rgh solver | DICPCG | GAMG (first), PCG+DIC (final) |
+| rho solver | DICPCG | diagonal |
+| PIMPLE block | Not required | Required even in SIMPLE mode (pimpleControl reads it) |
+| rhoMin/rhoMax | Not needed | pMin/pMinFactor preferred; rhoMin/rhoMax accepted with warning |
