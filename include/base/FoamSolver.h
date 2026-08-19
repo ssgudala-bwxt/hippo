@@ -76,7 +76,7 @@ public:
   /// Called by Time::adjustDeltaT() — imposes MOOSE's desired time step.
   virtual bool adjustTimeStep() override
   {
-    if (!_enabled)
+    if (!_enabled || !_old_desired_dt.has_value())
       return true;
 
     // Adjust deltaTFactor to undo any MOOSE-induced cutback.
