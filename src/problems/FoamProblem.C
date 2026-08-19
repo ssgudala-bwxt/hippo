@@ -41,6 +41,31 @@ FoamProblem::FoamProblem(InputParameters const & params)
     _foam_postprocessor()
 {
   assert(_foam_mesh);
+
+  // Auto-create HippoSolver here (not in initialSetup) so that solver-owned
+  // objects (e.g. turbulence model, thermo) are registered in the fvMesh
+  // objectRegistry before FoamFunctionObject constructors call execute().
+  // FoamFunctionObject is a Variable and is constructed after FoamProblem but
+  // before initialSetup() is called by MOOSE.
+  if (parameters().get<bool>("solve"))
+  {
+    const auto & ctrl = _foam_mesh->fvMesh().time().controlDict();
+    if (ctrl.found("solver"))
+    {
+      const Foam::word solver_name(ctrl.lookup("solver"));
+      try
+      {
+        registerHippoSolver(Hippo::HippoSolverRegistry::create(solver_name, _foam_mesh->fvMesh()));
+      }
+      catch (const std::exception & e)
+      {
+        mooseError("FoamProblem constructor: auto-loading HippoSolver '", solver_name,
+                   "' failed: ", e.what(),
+                   "\n\nEnsure the controlDict 'solver' entry names a loadable "
+                   "Hippo solver module library.");
+      }
+    }
+  }
 }
 
 void
