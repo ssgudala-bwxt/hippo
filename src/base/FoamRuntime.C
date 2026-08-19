@@ -3,8 +3,14 @@
 
 #include <MooseError.h>
 #include <filesystem>
+
 namespace Hippo
 {
+
+// Process-wide singleton storage.
+// cArgs must outlive argList because argList holds a raw char** pointer.
+std::unique_ptr<cArgs> FoamRuntime::_s_cargs;
+std::unique_ptr<Foam::argList> FoamRuntime::_s_arg_list;
 
 namespace
 {
@@ -23,39 +29,50 @@ checkValidCaseDir(const std::string & case_dir)
   return case_dir;
 }
 
-cArgs
-make_foam_init_args(const std::string & case_dir, MPI_Comm const & comm)
+// Ensure Foam MPI/parallel infrastructure is initialised exactly once per
+// process, then return a Foam::Time built directly from rootPath + caseName.
+// Using the rootPath/caseName constructor avoids going through argList a
+// second time — ESI v2606 added an explicit fatal error when
+// UPstream::setHostCommunicators is called more than once per process.
+Foam::Time
+initAndMakeTime(const std::string & case_dir, MPI_Comm const & comm)
 {
-  cArgs args("foamRun");
-  args.push_arg("-case");
-  args.push_arg(case_dir);
-  int mpi_world_size{1};
-  MPI_Comm_size(comm, &mpi_world_size);
-  if (mpi_world_size > 1)
-  {
-    args.push_arg("-parallel");
-  }
-  return args;
-}
+  namespace fs = std::filesystem;
 
-Foam::argList
-make_arg_list(cArgs & argv, MPI_Comm const & comm)
-{
-  return Foam::argList(argv.get_argc(), argv.get_argv_ptr(), (void *)&comm);
+  const std::string checked = checkValidCaseDir(case_dir);
+  fs::path p{checked};
+  Foam::fileName rootPath(p.parent_path().string());
+  Foam::fileName caseName(p.filename().string());
+
+  if (!FoamRuntime::_s_arg_list)
+  {
+    // First FoamRuntime in this process: build argList to call UPstream::init.
+    auto & cargs = *(FoamRuntime::_s_cargs = std::make_unique<cArgs>("foamRun"));
+    cargs.push_arg("-case");
+    cargs.push_arg(checked);
+    int world_size = 1;
+    MPI_Comm_size(comm, &world_size);
+    if (world_size > 1)
+      cargs.push_arg("-parallel");
+
+    FoamRuntime::_s_arg_list = std::make_unique<Foam::argList>(
+        cargs.get_argc(), cargs.get_argv_ptr(), (void *)&comm);
+  }
+
+  // All FoamRuntime instances (including the first) use the rootPath/caseName
+  // constructor so Time never calls argList — and thus never calls
+  // UPstream::setHostCommunicators — again.
+  return Foam::Time(Foam::Time::controlDictName, rootPath, caseName);
 }
 } // namespace
 
 FoamRuntime::FoamRuntime(const std::string & case_dir, MPI_Comm const & comm)
-  : _argv(make_foam_init_args(checkValidCaseDir(case_dir), comm)),
-    _comm(comm),
-    _runtime(Foam::Time::controlDictName, make_arg_list(_argv, comm))
+  : _case_dir(case_dir), _comm(comm), _runtime(initAndMakeTime(case_dir, comm))
 {
 }
 
 FoamRuntime::FoamRuntime(const FoamRuntime & rt)
-  : _argv(rt._argv),
-    _comm(rt._comm),
-    _runtime(Foam::Time::controlDictName, make_arg_list(_argv, rt._comm))
+  : _case_dir(rt._case_dir), _comm(rt._comm), _runtime(initAndMakeTime(rt._case_dir, rt._comm))
 {
 }
 
