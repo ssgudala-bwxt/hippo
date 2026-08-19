@@ -24,13 +24,13 @@ Foam::solvers::transferTestSolver::dependenciesModified() const
 bool
 Foam::solvers::transferTestSolver::read()
 {
-  maxDeltaT_ = runTime().controlDict().getOrDefault<scalar>("maxDeltaT", Foam::great);
+  maxDeltaT_ = runTime().controlDict().getOrDefault<scalar>("maxDeltaT", 1e15);
   return true;
 }
 
 Foam::solvers::transferTestSolver::transferTestSolver(fvMesh & mesh)
   : Hippo::HippoSolver(mesh),
-    maxDeltaT_(Foam::great),
+    maxDeltaT_(1e15),
     T_(IOobject("T", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
     kappa_("kappa", dimViscosity, 1e-5),
     pimple_(mesh),
