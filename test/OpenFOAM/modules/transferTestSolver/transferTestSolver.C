@@ -2,6 +2,7 @@
 #include "fvMesh.H"
 #include "fvMatrices.H"
 #include "laplacianScheme.H"
+#include "scalar.H"
 
 // ---------------------------------------------------------------------------
 // Hippo factory symbol: resolved by HippoSolverRegistry via dlsym after
