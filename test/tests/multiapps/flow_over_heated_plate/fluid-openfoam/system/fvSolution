@@ -75,7 +75,7 @@ PIMPLE
 {
     momentumPredictor yes;
     nOuterCorrectors 1;
-    nCorrectors     1;
+    nCorrectors     2;
     nNonOrthogonalCorrectors 0;
     rhoMin          0.01;
     rhoMax          10.0;
