@@ -17,21 +17,20 @@ hippo_solver_factory_transferTestSolver(Foam::fvMesh & mesh)
 bool
 Foam::solvers::transferTestSolver::dependenciesModified() const
 {
-  return runTime().controlDict().modified();
+  // ESI v2606 dictionary has no modified(); always re-read for simplicity.
+  return true;
 }
 
 bool
 Foam::solvers::transferTestSolver::read()
 {
-  maxDeltaT_ = runTime().controlDict().found("maxDeltaT")
-                   ? scalar(runTime().controlDict().lookup("maxDeltaT"))
-                   : vGreat;
+  maxDeltaT_ = runTime().controlDict().getOrDefault<scalar>("maxDeltaT", Foam::great);
   return true;
 }
 
 Foam::solvers::transferTestSolver::transferTestSolver(fvMesh & mesh)
   : Hippo::HippoSolver(mesh),
-    maxDeltaT_(vGreat),
+    maxDeltaT_(Foam::great),
     T_(IOobject("T", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
     kappa_("kappa", dimViscosity, 1e-5),
     pimple_(mesh),
