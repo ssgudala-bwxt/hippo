@@ -5,8 +5,6 @@
 #include "fluid.H"
 #include "constrainHbyA.H"
 #include "constrainPressure.H"
-#include "rhoEqn.H"
-#include "compressibleContinuityErrs.H"
 #include "fvcSmooth.H"
 
 // ---------------------------------------------------------------------------
@@ -35,8 +33,7 @@ Foam::solvers::fluid::fluid(fvMesh & mesh)
          linearInterpolate(rho_ * U_) & mesh.Sf()),
     turbulence_(compressible::turbulenceModel::New(rho_, U_, phi_, thermo_)),
     g_(IOobject("g", mesh.time().constant(), mesh, IOobject::MUST_READ, IOobject::NO_WRITE)),
-    hRef_("hRef", dimLength, 0,
-          mesh.time().constant() + "/hRef", mesh.time()),
+    hRef_("hRef", dimLength, 0),
     ghRef_(mag(g_) * hRef_),
     gh_("gh", (g_ & mesh.C()) - ghRef_),
     ghf_("ghf", (g_ & mesh.Cf()) - ghRef_),
@@ -97,8 +94,7 @@ Foam::solvers::fluid::solve()
   // --- rhoEqn (first iter) ---
   if (pimple.firstIter())
   {
-    fvScalarMatrix rhoEqn(fvm::ddt(rho) + fvc::div(phi));
-    rhoEqn.solve();
+    solve(fvm::ddt(rho) + fvc::div(phi));
   }
 
   while (pimple.loop())
@@ -205,8 +201,7 @@ Foam::solvers::fluid::solve()
 
       // rhoEqn for flux correction
       {
-        fvScalarMatrix rhoEqn(fvm::ddt(rho) + fvc::div(phi));
-        rhoEqn.solve();
+        solve(fvm::ddt(rho) + fvc::div(phi));
         rho = thermo.rho();
       }
 
