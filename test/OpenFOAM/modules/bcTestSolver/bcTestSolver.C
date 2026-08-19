@@ -2,8 +2,6 @@
 #include "dimensionSets.H"
 #include "fvConstraints.H"
 #include "fvMesh.H"
-#include "fvMeshMover.H"
-#include "fvModels.H"
 #include "fvmLaplacian.H"
 
 namespace
@@ -51,7 +49,7 @@ Foam::solvers::bcTestSolver::bcTestSolver(fvMesh & mesh)
 Foam::scalar
 Foam::solvers::bcTestSolver::maxDeltaT() const
 {
-  return min(Foam::fvModels::New(mesh()).maxDeltaT(), maxDeltaT_);
+  return maxDeltaT_;
 }
 
 void
@@ -60,9 +58,7 @@ Foam::solvers::bcTestSolver::preSolve()
   if (dependenciesModified())
     read();
 
-  Foam::fvModels::New(mesh()).preUpdateMesh();
-  mesh().update();
-}
+    }
 
 void
 Foam::solvers::bcTestSolver::moveMeshIfNeeded()

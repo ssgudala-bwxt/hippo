@@ -4,8 +4,6 @@
 #include "dimensionedVector.H"
 #include "fvcFlux.H"
 #include "fvMesh.H"
-#include "fvMeshMover.H"
-#include "fvModels.H"
 #include "postprocessorTestSolver.H"
 #include "scalar.H"
 #include "volFieldsFwd.H"
@@ -60,7 +58,7 @@ Foam::solvers::postprocessorTestSolver::postprocessorTestSolver(fvMesh & mesh)
 Foam::scalar
 Foam::solvers::postprocessorTestSolver::maxDeltaT() const
 {
-  return min(Foam::fvModels::New(mesh()).maxDeltaT(), maxDeltaT_);
+  return maxDeltaT_;
 }
 
 void
@@ -69,9 +67,7 @@ Foam::solvers::postprocessorTestSolver::preSolve()
   if (dependenciesModified())
     read();
 
-  Foam::fvModels::New(mesh()).preUpdateMesh();
-  mesh().update();
-}
+    }
 
 void
 Foam::solvers::postprocessorTestSolver::moveMeshIfNeeded()

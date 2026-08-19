@@ -1,7 +1,5 @@
 #include "dimensionSets.H"
 #include "fvMesh.H"
-#include "fvMeshMover.H"
-#include "fvModels.H"
 #include "transferTestSolver.H"
 
 namespace
@@ -49,7 +47,7 @@ Foam::solvers::transferTestSolver::transferTestSolver(fvMesh & mesh)
 Foam::scalar
 Foam::solvers::transferTestSolver::maxDeltaT() const
 {
-  return min(Foam::fvModels::New(mesh()).maxDeltaT(), maxDeltaT_);
+  return maxDeltaT_;
 }
 
 void
@@ -57,22 +55,12 @@ Foam::solvers::transferTestSolver::preSolve()
 {
   if (dependenciesModified())
     read();
-
-  Foam::fvModels::New(mesh()).preUpdateMesh();
-  mesh().update();
 }
 
 void
 Foam::solvers::transferTestSolver::moveMeshIfNeeded()
 {
-  if (pimple_.firstIter() || pimple_.moveMeshOuterCorrectors())
-  {
-    if (!mesh().mover().solidBody())
-      FatalErrorInFunction << "Solver transferTestSolver does not support non-solid body mesh motion"
-                           << exit(FatalError);
-
-    mesh().move();
-  }
+  // Static mesh — no mesh motion needed for test solvers.
 }
 
 void

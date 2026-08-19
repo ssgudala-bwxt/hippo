@@ -3,8 +3,6 @@
 #include "dimensionedType.H"
 #include "fvcSurfaceIntegrate.H"
 #include "fvConstraints.H"
-#include "fvMeshMover.H"
-#include "fvModels.H"
 #include "fvmDdt.H"
 #include "fvmLaplacian.H"
 #include "localEulerDdtScheme.H"
@@ -56,7 +54,7 @@ Foam::solvers::odeTestSolver::odeTestSolver(fvMesh & mesh)
 Foam::scalar
 Foam::solvers::odeTestSolver::maxDeltaT() const
 {
-  return min(Foam::fvModels::New(mesh()).maxDeltaT(), maxDeltaT_);
+  return maxDeltaT_;
 }
 
 void
@@ -65,9 +63,7 @@ Foam::solvers::odeTestSolver::preSolve()
   if (dependenciesModified())
     read();
 
-  Foam::fvModels::New(mesh()).preUpdateMesh();
-  mesh().update();
-}
+    }
 
 void
 Foam::solvers::odeTestSolver::moveMeshIfNeeded()
