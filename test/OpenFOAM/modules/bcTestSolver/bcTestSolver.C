@@ -1,4 +1,5 @@
 #include "bcTestSolver.H"
+#include "fvmDdt.H"
 #include "fvMesh.H"
 #include "fvMatrices.H"
 #include "scalar.H"
@@ -44,7 +45,7 @@ Foam::solvers::bcTestSolver::solve()
 {
   while (pimple_.loop())
   {
-    fvScalarMatrix TEqn(fvm::laplacian(kappa_, T_));
+    fvScalarMatrix TEqn(fvm::ddt(T_) - fvm::laplacian(kappa_, T_));
     TEqn.relax();
     TEqn.solve();
   }

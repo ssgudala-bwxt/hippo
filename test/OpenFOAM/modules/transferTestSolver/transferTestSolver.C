@@ -1,7 +1,7 @@
 #include "transferTestSolver.H"
 #include "fvMesh.H"
 #include "fvMatrices.H"
-#include "laplacianScheme.H"
+#include "fvmDdt.H"
 #include "scalar.H"
 
 // ---------------------------------------------------------------------------
@@ -57,7 +57,9 @@ Foam::solvers::transferTestSolver::solve()
 {
   while (pimple_.loop())
   {
-    fvScalarMatrix TEqn(fvm::laplacian(kappa_, T_));
+    // Transient heat diffusion: dT/dt = kappa * laplacian(T)
+    // Requires both ddt and laplacian to avoid singular all-Neumann system.
+    fvScalarMatrix TEqn(fvm::ddt(T_) - fvm::laplacian(kappa_, T_));
     TEqn.relax();
     TEqn.solve();
   }
