@@ -95,10 +95,8 @@ Foam::solvers::fluid::solve()
   const auto & g = g_;
   const auto & psi = thermo_.psi();
 
-  // Detect steady-state mode from ddtSchemes
-  const word ddtDefault =
-      mesh.schemesDict().subDict("ddtSchemes").getOrDefault<word>("default", "Euler");
-  const bool isSteady = (ddtDefault == "steadyState");
+  // Detect steady-state mode using ESI v2606 schemesLookup::steady() API
+  const bool isSteady = mesh.schemes().steady();
 
   dimensionedScalar compressibility = fvc::domainIntegrate(psi);
   bool isCompressible = (compressibility.value() > Foam::SMALL);
