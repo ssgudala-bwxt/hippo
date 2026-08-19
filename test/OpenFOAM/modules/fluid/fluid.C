@@ -44,7 +44,7 @@ Foam::solvers::fluid::fluid(fvMesh & mesh)
     initialMass_("initialMass", fvc::domainIntegrate(rho_)),
     pressureControl_(p_, rho_, pimple_.dict(), false),
     rhoMax_("rhoMax", dimDensity, Foam::GREAT, pimple_.dict()),
-    rhoMin_("rhoMin", dimDensity, Zero, pimple_.dict()),
+    rhoMin_("rhoMin", dimDensity, 0.01, pimple_.dict()),
     dpdt_(IOobject("dpdt", mesh.time().name(), mesh, IOobject::NO_READ, IOobject::NO_WRITE),
           fvc::ddt(p_)),
     K_("K", 0.5 * magSqr(U_)),
@@ -145,6 +145,7 @@ Foam::solvers::fluid::solve()
       bool isCompressible = (compressibility.value() > Foam::SMALL);
 
       rho = thermo.rho();
+        rho.max(rhoMin_);
       const volScalarField psip0(psi * p);
 
       volScalarField rAU(1.0 / UEqn.A());
@@ -196,6 +197,7 @@ Foam::solvers::fluid::solve()
       {
         thermo.correctRho(psi * p - psip0, rhoMin_, rhoMax_);
         rho = thermo.rho();
+        rho.max(rhoMin_);
         p_rgh = p - rho * gh;
         p_rgh.correctBoundaryConditions();
       }
@@ -217,4 +219,5 @@ Foam::solvers::fluid::solve()
   }
 
   rho = thermo.rho();
+  rho.max(rhoMin_);
 }
