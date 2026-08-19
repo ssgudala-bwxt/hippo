@@ -43,9 +43,10 @@ solvers
 
     p_rghFinal
     {
-        $p_rgh;
-        relTol          1e-4;
+        solver          PCG;
+        preconditioner  DIC;
         tolerance       1e-8;
+        relTol          0;
     }
 
     "(U|h|e|k|epsilon|R)"
