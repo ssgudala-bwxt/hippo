@@ -1,3 +1,3 @@
-SOURCE += laplacianTestSolver.C
+laplacianTestSolver.C
 
 LIB = $(FOAM_USER_LIBBIN)/liblaplacianTestSolver
