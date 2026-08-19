@@ -124,9 +124,8 @@
     dt = 0.0003125
 
     solve_type = 'PJFNK'
-    petsc_options = '-snes_ksp_ew'
-    petsc_options_iname = '-pc_type -pc_hypre_type'
-    petsc_options_value = 'hypre boomeramg'
+    petsc_options_iname = '-pc_type'
+    petsc_options_value = 'ilu'
     nl_abs_tol = 1e-7
     nl_rel_tol = 1e-8
 []
