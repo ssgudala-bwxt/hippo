@@ -61,9 +61,15 @@ FoamRuntime::initAndMakeTime(const std::string & case_dir, MPI_Comm const & comm
     return Foam::Time(Foam::Time::controlDictName, *_s_arg_list);
   }
 
-  // Subsequent FoamRuntime instances: argList already initialised MPI and the
-  // file handler.  Use the rootPath/caseName constructor which does not touch
-  // UPstream::setHostCommunicators.
+  // Subsequent FoamRuntime instances: argList already set up MPI, the global
+  // file handler, and node communicators.  Use the rootPath/caseName
+  // constructor.  For parallel runs the caseName MUST include the processorN
+  // component so that TimePaths::detectProcessorCase() sets processorCase_=true
+  // and globalCaseName_ correctly — otherwise Time::path() returns the global
+  // case dir instead of processorN/, and fvMesh cannot find polyMesh data.
+  if (Foam::UPstream::parRun())
+    caseName /= "processor" + Foam::name(Foam::UPstream::myProcNo());
+
   return Foam::Time(Foam::Time::controlDictName, rootPath, caseName);
 }
 
