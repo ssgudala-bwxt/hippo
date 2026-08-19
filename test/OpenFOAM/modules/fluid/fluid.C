@@ -30,7 +30,7 @@ Foam::solvers::fluid::fluid(fvMesh & mesh)
          thermo_.rho()),
     U_(IOobject("U", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
     phi_(IOobject("phi", mesh.time().name(), mesh, IOobject::READ_IF_PRESENT, IOobject::AUTO_WRITE),
-         linearInterpolate(rho_ * U_) & mesh.Sf()),
+         fvc::interpolate(rho_) * (fvc::interpolate(U_) & mesh.Sf())),
     turbulence_(compressible::turbulenceModel::New(rho_, U_, phi_, thermo_)),
     g_(IOobject("g", mesh.time().constant(), mesh, IOobject::MUST_READ, IOobject::NO_WRITE)),
     hRef_("hRef", dimLength, 0),
@@ -91,16 +91,15 @@ Foam::solvers::fluid::solve()
   const auto & g = g_;
   const auto & psi = thermo_.psi();
 
-  // --- rhoEqn (first iter) ---
-  if (pimple.firstIter())
-  {
-    fvScalarMatrix rhoEqn(fvm::ddt(rho) + fvc::div(phi));
-    rhoEqn.solve();
-  }
-
   while (pimple.loop())
   {
-    // ---- UEqn ----
+    // rhoEqn on first PIMPLE iteration (matches buoyantPimpleFoam)
+    if (pimple.firstIter() && !pimple.SIMPLErho())
+    {
+      fvScalarMatrix rhoEqn(fvm::ddt(rho) + fvc::div(phi));
+      rhoEqn.solve();
+    }
+
     MRF.correctBoundaryVelocity(U);
 
     fvVectorMatrix UEqn(fvm::ddt(rho, U) + fvm::div(phi, U) + MRF.DDt(rho, U) +
@@ -206,6 +205,7 @@ Foam::solvers::fluid::solve()
         fvScalarMatrix rhoEqn2(fvm::ddt(rho) + fvc::div(phi));
         rhoEqn2.solve();
         rho = thermo.rho();
+        rho.max(rhoMin_); // guard against divide-by-zero in nuEff()
       }
 
       if (thermo.dpdt())
