@@ -17,6 +17,10 @@ public:
 
   Foam::Time & runTime() { return _runtime; }
 
+  // Static helper — must be public so it's accessible from the translation
+  // unit's anonymous namespace (which calls it from the initializer list).
+  static Foam::Time initAndMakeTime(const std::string & case_dir, MPI_Comm const & comm);
+
 private:
   std::string _case_dir; // stored to allow copy construction
   MPI_Comm _comm;        // stored to allow copy construction

@@ -28,14 +28,10 @@ checkValidCaseDir(const std::string & case_dir)
 
   return case_dir;
 }
+} // namespace
 
-// Ensure Foam MPI/parallel infrastructure is initialised exactly once per
-// process, then return a Foam::Time built directly from rootPath + caseName.
-// Using the rootPath/caseName constructor avoids going through argList a
-// second time — ESI v2606 added an explicit fatal error when
-// UPstream::setHostCommunicators is called more than once per process.
 Foam::Time
-initAndMakeTime(const std::string & case_dir, MPI_Comm const & comm)
+FoamRuntime::initAndMakeTime(const std::string & case_dir, MPI_Comm const & comm)
 {
   namespace fs = std::filesystem;
 
@@ -44,10 +40,10 @@ initAndMakeTime(const std::string & case_dir, MPI_Comm const & comm)
   Foam::fileName rootPath(p.parent_path().string());
   Foam::fileName caseName(p.filename().string());
 
-  if (!FoamRuntime::_s_arg_list)
+  if (!_s_arg_list)
   {
     // First FoamRuntime in this process: build argList to call UPstream::init.
-    auto & cargs = *(FoamRuntime::_s_cargs = std::make_unique<cArgs>("foamRun"));
+    auto & cargs = *(_s_cargs = std::make_unique<cArgs>("foamRun"));
     cargs.push_arg("-case");
     cargs.push_arg(checked);
     int world_size = 1;
@@ -55,7 +51,7 @@ initAndMakeTime(const std::string & case_dir, MPI_Comm const & comm)
     if (world_size > 1)
       cargs.push_arg("-parallel");
 
-    FoamRuntime::_s_arg_list = std::make_unique<Foam::argList>(
+    _s_arg_list = std::make_unique<Foam::argList>(
         cargs.get_argc(), cargs.get_argv_ptr(), (void *)&comm);
   }
 
@@ -64,7 +60,6 @@ initAndMakeTime(const std::string & case_dir, MPI_Comm const & comm)
   // UPstream::setHostCommunicators — again.
   return Foam::Time(Foam::Time::controlDictName, rootPath, caseName);
 }
-} // namespace
 
 FoamRuntime::FoamRuntime(const std::string & case_dir, MPI_Comm const & comm)
   : _case_dir(case_dir), _comm(comm), _runtime(initAndMakeTime(case_dir, comm))
