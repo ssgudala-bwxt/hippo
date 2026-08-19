@@ -1,30 +1,27 @@
 #pragma once
 
 #include "HippoSolver.h"
-#include "solidThermophysicalTransportModel.H"
+#include "fvCFD.H"
+#include "pimpleControl.H"
 
 namespace Foam
 {
 namespace solvers
 {
 
+// BC test solver: solves a Laplacian on T to exercise OpenFOAM boundary
+// condition coupling. Uses only finiteVolume (no solidThermo/transport model).
 class bcTestSolver : public Hippo::HippoSolver
 {
 protected:
   scalar maxDeltaT_;
-  autoPtr<solidThermo> thermoPtr_;
-  solidThermo & thermo_;
   volScalarField T_;
-  autoPtr<solidThermophysicalTransportModel> thermophysicalTransport_;
+  dimensionedScalar kappa_;
   pimpleControl pimple_;
 
-  bool dependenciesModified() const;
   bool read();
-  void moveMeshIfNeeded();
-  void thermophysicalPredictor();
 
 public:
-  const solidThermo & thermo;
   const volScalarField & T;
 
   explicit bcTestSolver(fvMesh & mesh);

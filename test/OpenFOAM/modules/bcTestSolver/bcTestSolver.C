@@ -1,48 +1,29 @@
 #include "bcTestSolver.H"
-#include "dimensionSets.H"
-#include "fvConstraints.H"
 #include "fvMesh.H"
-#include "fvmLaplacian.H"
+#include "fvMatrices.H"
+#include "scalar.H"
 
-namespace
-{
-Hippo::HippoSolver *
-createBcTestSolver(Foam::fvMesh & mesh)
+extern "C" Hippo::HippoSolver *
+hippo_solver_factory_bcTestSolver(Foam::fvMesh & mesh)
 {
   return new Foam::solvers::bcTestSolver(mesh);
-}
-
-[[maybe_unused]] const bool registered_bc_test_solver =
-} // namespace
-
-bool
-Foam::solvers::bcTestSolver::dependenciesModified() const
-{
-  return runTime().controlDict().modified();
 }
 
 bool
 Foam::solvers::bcTestSolver::read()
 {
-  maxDeltaT_ = runTime().controlDict().found("maxDeltaT")
-                   ? runTime().controlDict().lookup<scalar>("maxDeltaT", runTime().userUnits())
-                   : vGreat;
-
+  maxDeltaT_ = runTime().controlDict().getOrDefault<scalar>("maxDeltaT", 1e15);
   return true;
 }
 
 Foam::solvers::bcTestSolver::bcTestSolver(fvMesh & mesh)
   : Hippo::HippoSolver(mesh),
-    maxDeltaT_(vGreat),
-    thermoPtr_(solidThermo::New(mesh)),
-    thermo_(thermoPtr_()),
-    T_(IOobject("T", mesh.time().name(), mesh, IOobject::NO_READ, IOobject::AUTO_WRITE), mesh),
-    thermophysicalTransport_(solidThermophysicalTransportModel::New(thermo_)),
+    maxDeltaT_(1e15),
+    T_(IOobject("T", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
+    kappa_("kappa", dimViscosity, 1e-5),
     pimple_(mesh),
-    thermo(thermo_),
     T(T_)
 {
-  thermo.validate("solid", "h", "e");
   read();
 }
 
@@ -55,33 +36,7 @@ Foam::solvers::bcTestSolver::maxDeltaT() const
 void
 Foam::solvers::bcTestSolver::preSolve()
 {
-  if (dependenciesModified())
-    read();
-
-    }
-
-void
-Foam::solvers::bcTestSolver::moveMeshIfNeeded()
-{
-  if (pimple_.firstIter() || pimple_.moveMeshOuterCorrectors())
-  {
-    if (!mesh().mover().solidBody())
-      FatalErrorInFunction << "Solver bcTestSolver does not support non-solid body mesh motion"
-                           << exit(FatalError);
-
-    mesh().move();
-  }
-}
-
-void
-Foam::solvers::bcTestSolver::thermophysicalPredictor()
-{
-  fvScalarMatrix eEqn(fvm::laplacian(thermo_.kappa(), thermo.he()));
-
-  eEqn.solve();
-
-  thermo.he().write();
-  thermo_.correct();
+  read();
 }
 
 void
@@ -89,17 +44,8 @@ Foam::solvers::bcTestSolver::solve()
 {
   while (pimple_.loop())
   {
-    moveMeshIfNeeded();
-    thermophysicalPredictor();
+    fvScalarMatrix TEqn(fvm::laplacian(kappa_, T_));
+    TEqn.relax();
+    TEqn.solve();
   }
-}
-
-// ---------------------------------------------------------------------------
-// Hippo factory symbol: resolved by HippoSolverRegistry via dlsym after
-// dlopen("libbcTestSolver.so").  No dependency on hippo symbols required.
-// ---------------------------------------------------------------------------
-extern "C" Hippo::HippoSolver *
-hippo_solver_factory_bcTestSolver(Foam::fvMesh & mesh)
-{
-  return new Foam::solvers::bcTestSolver(mesh);
 }

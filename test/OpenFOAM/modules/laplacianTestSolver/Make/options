@@ -1,19 +1,9 @@
 EXE_INC = \
     -I../../../../include/base \
-    -I$(LIB_SRC)/physicalProperties/lnInclude \
-    -I$(LIB_SRC)/thermophysicalModels/basic/lnInclude \
-    -I$(LIB_SRC)/thermophysicalModels/solidThermo/lnInclude \
-    -I$(LIB_SRC)/ThermophysicalTransportModels/thermophysicalTransportModel/lnInclude \
-    -I$(LIB_SRC)/ThermophysicalTransportModels/solid/lnInclude \
     -I$(LIB_SRC)/finiteVolume/lnInclude \
-    -I$(LIB_SRC)/meshTools/lnInclude \
-    -I$(LIB_SRC)/sampling/lnInclude
+    -I$(LIB_SRC)/meshTools/lnInclude
 
 LIB_LIBS = \
-    -lsolidThermo \
-    -lspecie \
     -lfiniteVolume \
-    -ldynamicFvMesh \
     -lmeshTools \
-    -lsampling \
     -ldl

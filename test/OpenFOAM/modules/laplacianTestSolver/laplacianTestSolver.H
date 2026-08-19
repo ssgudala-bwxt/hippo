@@ -15,10 +15,7 @@ protected:
   volScalarField kappa_;
   pimpleControl pimple_;
 
-  bool dependenciesModified() const;
   bool read();
-  void moveMeshIfNeeded();
-  void thermophysicalPredictor();
 
 public:
   const volScalarField & T;
