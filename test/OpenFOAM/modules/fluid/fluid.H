@@ -66,7 +66,7 @@ public:
   ~fluid() override = default;
 
   scalar maxDeltaT() const override { return 1e15; }
-  bool transient() const override { return true; }
+  bool transient() const override { return true; }  // pimpleControl handles both modes
   void preSolve() override {}
   void moveMesh() override {}
   void solve() override;

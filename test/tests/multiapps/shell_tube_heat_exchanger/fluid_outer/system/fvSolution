@@ -80,6 +80,17 @@ SIMPLE{
     nNonOrthogonalCorrectors 0;
 }
 
+// PIMPLE block required by pimpleControl constructor even in steady mode
+PIMPLE
+{
+    momentumPredictor yes;
+    nOuterCorrectors 1;
+    nCorrectors     1;
+    nNonOrthogonalCorrectors 0;
+    rhoMin          0.1;
+    rhoMax          2000.0;
+}
+
 relaxationFactors
 {
     fields

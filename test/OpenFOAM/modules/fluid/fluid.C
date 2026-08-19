@@ -1,10 +1,14 @@
-// buoyantPimpleFoam physics as a Hippo::HippoSolver.
+// buoyantPimpleFoam / buoyantSimpleFoam physics as a Hippo::HippoSolver.
+// Supports both transient (PIMPLE) and steady-state (SIMPLE) modes, detected
+// from fvSchemes/ddtSchemes/default at runtime.
 // Converted from $WM_PROJECT_DIR/applications/solvers/heatTransfer/buoyantPimpleFoam/
+//             and applications/solvers/heatTransfer/buoyantSimpleFoam/
 // for use with ESI OpenFOAM-v2606 (static mesh, no LTS, no MRF active).
 
 #include "fluid.H"
 #include "constrainHbyA.H"
 #include "constrainPressure.H"
+#include "adjustPhi.H"
 #include "fvcSmooth.H"
 
 // ---------------------------------------------------------------------------
@@ -67,7 +71,7 @@ Foam::solvers::fluid::fluid(fvMesh & mesh)
 }
 
 // ---------------------------------------------------------------------------
-// solve() — one time step of PIMPLE loop (buoyantPimpleFoam logic).
+// solve() — dispatches to SIMPLE or PIMPLE based on ddtSchemes/default.
 // ---------------------------------------------------------------------------
 void
 Foam::solvers::fluid::solve()
@@ -91,21 +95,23 @@ Foam::solvers::fluid::solve()
   const auto & g = g_;
   const auto & psi = thermo_.psi();
 
-  while (pimple.loop())
-  {
-    // rhoEqn on first PIMPLE iteration (matches buoyantPimpleFoam)
-    if (pimple.firstIter() && !pimple.SIMPLErho())
-    {
-      fvScalarMatrix rhoEqn(fvm::ddt(rho) + fvc::div(phi));
-      rhoEqn.solve();
-    }
+  // Detect steady-state mode from ddtSchemes
+  const word ddtDefault =
+      mesh.schemesDict().subDict("ddtSchemes").getOrDefault<word>("default", "Euler");
+  const bool isSteady = (ddtDefault == "steadyState");
 
+  dimensionedScalar compressibility = fvc::domainIntegrate(psi);
+  bool isCompressible = (compressibility.value() > Foam::SMALL);
+
+  if (isSteady)
+  {
+    // ---- SIMPLE (steady) path — buoyantSimpleFoam ----
     MRF.correctBoundaryVelocity(U);
 
-    fvVectorMatrix UEqn(fvm::ddt(rho, U) + fvm::div(phi, U) + MRF.DDt(rho, U) +
-                        turbulence.divDevRhoReff(U) ==
-                        fvOptions(rho, U));
-
+    // UEqn (no ddt)
+    tmp<fvVectorMatrix> tUEqn(fvm::div(phi, U) + MRF.DDt(rho, U) +
+                               turbulence.divDevRhoReff(U) == fvOptions(rho, U));
+    fvVectorMatrix & UEqn = tUEqn.ref();
     UEqn.relax();
     fvOptions.constrain(UEqn);
 
@@ -115,111 +121,206 @@ Foam::solvers::fluid::solve()
           (-ghf * fvc::snGrad(rho) - fvc::snGrad(p_rgh)) * mesh.magSf()));
       UEqnRhs.solve();
       fvOptions.correct(U);
-      K = 0.5 * magSqr(U);
     }
 
-    // ---- EEqn ----
+    // EEqn (no ddt, no K terms)
     {
       volScalarField & he = thermo.he();
-
       fvScalarMatrix EEqn(
-          fvm::ddt(rho, he) + fvm::div(phi, he) + fvc::ddt(rho, K) + fvc::div(phi, K) +
+          fvm::div(phi, he) +
               (he.name() == "e"
-                   ? fvc::div(fvc::absolute(phi / fvc::interpolate(rho), U), p, "div(phiv,p)")
-                   : -dpdt) -
+                   ? fvc::div(phi, volScalarField("Ekp", 0.5 * magSqr(U) + p / rho))
+                   : fvc::div(phi, volScalarField("K", 0.5 * magSqr(U)))) -
               fvm::laplacian(turbulence.alphaEff(), he) ==
           rho * (U & g) + radiation.Sh(thermo, he) + fvOptions(rho, he));
-
       EEqn.relax();
       fvOptions.constrain(EEqn);
       EEqn.solve();
       fvOptions.correct(he);
-
       thermo.correct();
       radiation.correct();
     }
 
-    // ---- pEqn ----
+    // pEqn (SIMPLE / elliptic form)
     {
-      dimensionedScalar compressibility = fvc::domainIntegrate(psi);
-      bool isCompressible = (compressibility.value() > Foam::SMALL);
-
       rho = thermo.rho();
       rho.max(rhoMin_);
-      const volScalarField psip0(psi * p);  // snapshot before pressure corrections
 
-      while (pimple.correct())  // iterate nCorrectors times
+      volScalarField rAU(1.0 / UEqn.A());
+      surfaceScalarField rhorAUf("rhorAUf", fvc::interpolate(rho * rAU));
+      volVectorField HbyA(constrainHbyA(rAU * UEqn.H(), U, p_rgh));
+      tUEqn.clear();
+
+      surfaceScalarField phig(-rhorAUf * ghf * fvc::snGrad(rho) * mesh.magSf());
+      surfaceScalarField phiHbyA("phiHbyA", fvc::flux(rho * HbyA));
+      MRF.makeRelative(fvc::interpolate(rho), phiHbyA);
+      bool closedVolume = adjustPhi(phiHbyA, U, p_rgh);
+      phiHbyA += phig;
+      constrainPressure(p_rgh, rho, U, phiHbyA, rhorAUf, MRF);
+
+      while (pimple.correctNonOrthogonal())
       {
-        volScalarField rAU(1.0 / UEqn.A());
-        surfaceScalarField rhorAUf("rhorAUf", fvc::interpolate(rho * rAU));
-        volVectorField HbyA(constrainHbyA(rAU * UEqn.H(), U, p_rgh));
+        fvScalarMatrix p_rghEqn(fvm::laplacian(rhorAUf, p_rgh) == fvc::div(phiHbyA));
+        p_rghEqn.setReference(pRefCell_, getRefCellValue(p_rgh, pRefCell_));
+        p_rghEqn.solve();
 
-        surfaceScalarField phig(-rhorAUf * ghf * fvc::snGrad(rho) * mesh.magSf());
-        surfaceScalarField phiHbyA(
-            "phiHbyA",
-            fvc::flux(rho * HbyA) + MRF.zeroFilter(rhorAUf * fvc::ddtCorr(rho, U, phi)) + phig);
-
-        MRF.makeRelative(fvc::interpolate(rho), phiHbyA);
-        constrainPressure(p_rgh, rho, U, phiHbyA, rhorAUf, MRF);
-        fvc::makeRelative(phiHbyA, rho, U);
-
-        fvScalarMatrix p_rghDDtEqn(fvc::ddt(rho) + psi * correction(fvm::ddt(p_rgh)) +
-                                    fvc::div(phiHbyA) == fvOptions(psi, p_rgh, rho.name()));
-
-        while (pimple.correctNonOrthogonal())
+        if (pimple.finalNonOrthogonalIter())
         {
-          fvScalarMatrix p_rghEqn(p_rghDDtEqn - fvm::laplacian(rhorAUf, p_rgh));
-          p_rghEqn.setReference(pRefCell_,
-                                 isCompressible ? getRefCellValue(p_rgh, pRefCell_) : pRefValue_);
-          p_rghEqn.solve(p_rgh.select(pimple.finalInnerIter()));
-
-          if (pimple.finalNonOrthogonalIter())
-          {
-            phi = phiHbyA + p_rghEqn.flux();
-            p_rgh.relax();
-            U = HbyA + rAU * fvc::reconstruct((phig + p_rghEqn.flux()) / rhorAUf);
-            U.correctBoundaryConditions();
-            fvOptions.correct(U);
-            K = 0.5 * magSqr(U);
-          }
+          phi = phiHbyA - p_rghEqn.flux();
+          p_rgh.relax();
+          U = HbyA + rAU * fvc::reconstruct((phig - p_rghEqn.flux()) / rhorAUf);
+          U.correctBoundaryConditions();
+          fvOptions.correct(U);
         }
+      }
 
-        p = p_rgh + rho * gh;
-        pressureControl_.limit(p);
+      p = p_rgh + rho * gh;
+      pressureControl_.limit(p);
 
+      if (closedVolume)
+      {
         if (!isCompressible)
         {
-          if (p_rgh.needReference())
-          {
-            p += dimensionedScalar("p", p.dimensions(), pRefValue_ - getRefCellValue(p, pRefCell_));
-          }
+          p += dimensionedScalar("p", p.dimensions(), pRefValue_ - getRefCellValue(p, pRefCell_));
         }
         else
         {
-          thermo.correctRho(psi * p - psip0, rhoMin_, rhoMax_);
-          rho = thermo.rho();
-          rho.max(rhoMin_);
-          p_rgh = p - rho * gh;
-          p_rgh.correctBoundaryConditions();
+          p += (initialMass_ - fvc::domainIntegrate(psi * p)) / fvc::domainIntegrate(psi);
         }
-      }  // end while(pimple.correct())
-
-      // rhoEqn for flux correction (once, after all pressure corrections)
-      {
-        fvScalarMatrix rhoEqn2(fvm::ddt(rho) + fvc::div(phi));
-        rhoEqn2.solve();
-        rho = thermo.rho();
-        rho.max(rhoMin_);
+        p_rgh = p - rho * gh;
       }
 
-      if (thermo.dpdt())
-        dpdt = fvc::ddt(p);
+      rho = thermo.rho();
+      rho.clamp_range(rhoMin_, rhoMax_);
+      rho.relax();
     }
 
-    if (pimple.turbCorr())
-      turbulence.correct();
+    turbulence.correct();
   }
+  else
+  {
+    // ---- PIMPLE (transient) path — buoyantPimpleFoam ----
+    while (pimple.loop())
+    {
+      // rhoEqn on first PIMPLE iteration
+      if (pimple.firstIter() && !pimple.SIMPLErho())
+      {
+        fvScalarMatrix rhoEqn(fvm::ddt(rho) + fvc::div(phi));
+        rhoEqn.solve();
+      }
 
-  rho = thermo.rho();
-  rho.max(rhoMin_);
+      MRF.correctBoundaryVelocity(U);
+
+      fvVectorMatrix UEqn(fvm::ddt(rho, U) + fvm::div(phi, U) + MRF.DDt(rho, U) +
+                          turbulence.divDevRhoReff(U) == fvOptions(rho, U));
+      UEqn.relax();
+      fvOptions.constrain(UEqn);
+
+      if (pimple.momentumPredictor())
+      {
+        fvVectorMatrix UEqnRhs(UEqn == fvc::reconstruct(
+            (-ghf * fvc::snGrad(rho) - fvc::snGrad(p_rgh)) * mesh.magSf()));
+        UEqnRhs.solve();
+        fvOptions.correct(U);
+        K = 0.5 * magSqr(U);
+      }
+
+      // EEqn (transient)
+      {
+        volScalarField & he = thermo.he();
+        fvScalarMatrix EEqn(
+            fvm::ddt(rho, he) + fvm::div(phi, he) + fvc::ddt(rho, K) + fvc::div(phi, K) +
+                (he.name() == "e"
+                     ? fvc::div(fvc::absolute(phi / fvc::interpolate(rho), U), p, "div(phiv,p)")
+                     : -dpdt) -
+                fvm::laplacian(turbulence.alphaEff(), he) ==
+            rho * (U & g) + radiation.Sh(thermo, he) + fvOptions(rho, he));
+        EEqn.relax();
+        fvOptions.constrain(EEqn);
+        EEqn.solve();
+        fvOptions.correct(he);
+        thermo.correct();
+        radiation.correct();
+      }
+
+      // pEqn (transient)
+      {
+        rho = thermo.rho();
+        rho.max(rhoMin_);
+        const volScalarField psip0(psi * p);
+
+        while (pimple.correct())
+        {
+          volScalarField rAU(1.0 / UEqn.A());
+          surfaceScalarField rhorAUf("rhorAUf", fvc::interpolate(rho * rAU));
+          volVectorField HbyA(constrainHbyA(rAU * UEqn.H(), U, p_rgh));
+
+          surfaceScalarField phig(-rhorAUf * ghf * fvc::snGrad(rho) * mesh.magSf());
+          surfaceScalarField phiHbyA(
+              "phiHbyA",
+              fvc::flux(rho * HbyA) + MRF.zeroFilter(rhorAUf * fvc::ddtCorr(rho, U, phi)) + phig);
+
+          MRF.makeRelative(fvc::interpolate(rho), phiHbyA);
+          constrainPressure(p_rgh, rho, U, phiHbyA, rhorAUf, MRF);
+          fvc::makeRelative(phiHbyA, rho, U);
+
+          fvScalarMatrix p_rghDDtEqn(fvc::ddt(rho) + psi * correction(fvm::ddt(p_rgh)) +
+                                      fvc::div(phiHbyA) == fvOptions(psi, p_rgh, rho.name()));
+
+          while (pimple.correctNonOrthogonal())
+          {
+            fvScalarMatrix p_rghEqn(p_rghDDtEqn - fvm::laplacian(rhorAUf, p_rgh));
+            p_rghEqn.setReference(pRefCell_,
+                                   isCompressible ? getRefCellValue(p_rgh, pRefCell_) : pRefValue_);
+            p_rghEqn.solve(p_rgh.select(pimple.finalInnerIter()));
+
+            if (pimple.finalNonOrthogonalIter())
+            {
+              phi = phiHbyA + p_rghEqn.flux();
+              p_rgh.relax();
+              U = HbyA + rAU * fvc::reconstruct((phig + p_rghEqn.flux()) / rhorAUf);
+              U.correctBoundaryConditions();
+              fvOptions.correct(U);
+              K = 0.5 * magSqr(U);
+            }
+          }
+
+          p = p_rgh + rho * gh;
+          pressureControl_.limit(p);
+
+          if (!isCompressible)
+          {
+            if (p_rgh.needReference())
+              p += dimensionedScalar("p", p.dimensions(),
+                                     pRefValue_ - getRefCellValue(p, pRefCell_));
+          }
+          else
+          {
+            thermo.correctRho(psi * p - psip0, rhoMin_, rhoMax_);
+            rho = thermo.rho();
+            rho.max(rhoMin_);
+            p_rgh = p - rho * gh;
+            p_rgh.correctBoundaryConditions();
+          }
+        }  // pimple.correct()
+
+        // rhoEqn flux correction
+        {
+          fvScalarMatrix rhoEqn2(fvm::ddt(rho) + fvc::div(phi));
+          rhoEqn2.solve();
+          rho = thermo.rho();
+          rho.max(rhoMin_);
+        }
+
+        if (thermo.dpdt())
+          dpdt = fvc::ddt(p);
+      }
+
+      if (pimple.turbCorr())
+        turbulence.correct();
+    }
+
+    rho = thermo.rho();
+    rho.max(rhoMin_);
+  }
 }
