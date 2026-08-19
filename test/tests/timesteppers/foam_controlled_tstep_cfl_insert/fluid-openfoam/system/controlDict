@@ -44,5 +44,12 @@ runTimeModifiable true;
 
 functions
 {
-    #includeFunc writeObjects(h, rho)
+    writeObjects1
+    {
+        type            writeObjects;
+        libs            ("libutilityFunctionObjects.so");
+        objects         (h rho);
+        writeControl    timeStep;
+        writeInterval   1;
+    }
 }
