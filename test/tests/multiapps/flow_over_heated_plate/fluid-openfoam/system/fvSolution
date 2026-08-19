@@ -24,17 +24,14 @@ solvers
 
     "rho.*"
     {
-        solver          PCG;
-        preconditioner  DIC;
-        tolerance       0;
-        relTol          0;
+        solver          diagonal;
     }
 
     p_rgh
     {
-        solver          PCG;
-        preconditioner  DIC;
-        tolerance       1e-8;
+        solver          GAMG;
+        smoother        GaussSeidel;
+        tolerance       1e-7;
         relTol          0.01;
     }
 
@@ -56,6 +53,14 @@ solvers
     {
         $U;
         relTol          0;
+    }
+}
+
+relaxationFactors
+{
+    equations
+    {
+        ".*"    1;
     }
 }
 

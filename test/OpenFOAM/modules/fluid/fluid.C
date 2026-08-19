@@ -145,69 +145,71 @@ Foam::solvers::fluid::solve()
       bool isCompressible = (compressibility.value() > Foam::SMALL);
 
       rho = thermo.rho();
-        rho.max(rhoMin_);
-      const volScalarField psip0(psi * p);
+      rho.max(rhoMin_);
+      const volScalarField psip0(psi * p);  // snapshot before pressure corrections
 
-      volScalarField rAU(1.0 / UEqn.A());
-      surfaceScalarField rhorAUf("rhorAUf", fvc::interpolate(rho * rAU));
-      volVectorField HbyA(constrainHbyA(rAU * UEqn.H(), U, p_rgh));
-
-      surfaceScalarField phig(-rhorAUf * ghf * fvc::snGrad(rho) * mesh.magSf());
-      surfaceScalarField phiHbyA(
-          "phiHbyA",
-          fvc::flux(rho * HbyA) + MRF.zeroFilter(rhorAUf * fvc::ddtCorr(rho, U, phi)) + phig);
-
-      MRF.makeRelative(fvc::interpolate(rho), phiHbyA);
-      constrainPressure(p_rgh, rho, U, phiHbyA, rhorAUf, MRF);
-      fvc::makeRelative(phiHbyA, rho, U);
-
-      fvScalarMatrix p_rghDDtEqn(fvc::ddt(rho) + psi * correction(fvm::ddt(p_rgh)) +
-                                  fvc::div(phiHbyA) == fvOptions(psi, p_rgh, rho.name()));
-
-      while (pimple.correctNonOrthogonal())
+      while (pimple.correct())  // iterate nCorrectors times
       {
-        fvScalarMatrix p_rghEqn(p_rghDDtEqn - fvm::laplacian(rhorAUf, p_rgh));
-        p_rghEqn.setReference(pRefCell_,
-                               isCompressible ? getRefCellValue(p_rgh, pRefCell_) : pRefValue_);
-        p_rghEqn.solve(p_rgh.select(pimple.finalInnerIter()));
+        volScalarField rAU(1.0 / UEqn.A());
+        surfaceScalarField rhorAUf("rhorAUf", fvc::interpolate(rho * rAU));
+        volVectorField HbyA(constrainHbyA(rAU * UEqn.H(), U, p_rgh));
 
-        if (pimple.finalNonOrthogonalIter())
+        surfaceScalarField phig(-rhorAUf * ghf * fvc::snGrad(rho) * mesh.magSf());
+        surfaceScalarField phiHbyA(
+            "phiHbyA",
+            fvc::flux(rho * HbyA) + MRF.zeroFilter(rhorAUf * fvc::ddtCorr(rho, U, phi)) + phig);
+
+        MRF.makeRelative(fvc::interpolate(rho), phiHbyA);
+        constrainPressure(p_rgh, rho, U, phiHbyA, rhorAUf, MRF);
+        fvc::makeRelative(phiHbyA, rho, U);
+
+        fvScalarMatrix p_rghDDtEqn(fvc::ddt(rho) + psi * correction(fvm::ddt(p_rgh)) +
+                                    fvc::div(phiHbyA) == fvOptions(psi, p_rgh, rho.name()));
+
+        while (pimple.correctNonOrthogonal())
         {
-          phi = phiHbyA + p_rghEqn.flux();
-          p_rgh.relax();
-          U = HbyA + rAU * fvc::reconstruct((phig + p_rghEqn.flux()) / rhorAUf);
-          U.correctBoundaryConditions();
-          fvOptions.correct(U);
-          K = 0.5 * magSqr(U);
+          fvScalarMatrix p_rghEqn(p_rghDDtEqn - fvm::laplacian(rhorAUf, p_rgh));
+          p_rghEqn.setReference(pRefCell_,
+                                 isCompressible ? getRefCellValue(p_rgh, pRefCell_) : pRefValue_);
+          p_rghEqn.solve(p_rgh.select(pimple.finalInnerIter()));
+
+          if (pimple.finalNonOrthogonalIter())
+          {
+            phi = phiHbyA + p_rghEqn.flux();
+            p_rgh.relax();
+            U = HbyA + rAU * fvc::reconstruct((phig + p_rghEqn.flux()) / rhorAUf);
+            U.correctBoundaryConditions();
+            fvOptions.correct(U);
+            K = 0.5 * magSqr(U);
+          }
         }
-      }
 
-      p = p_rgh + rho * gh;
-      pressureControl_.limit(p);
+        p = p_rgh + rho * gh;
+        pressureControl_.limit(p);
 
-      // Continuity correction
-      if (!isCompressible)
-      {
-        if (p_rgh.needReference())
+        if (!isCompressible)
         {
-          p += dimensionedScalar("p", p.dimensions(), pRefValue_ - getRefCellValue(p, pRefCell_));
+          if (p_rgh.needReference())
+          {
+            p += dimensionedScalar("p", p.dimensions(), pRefValue_ - getRefCellValue(p, pRefCell_));
+          }
         }
-      }
-      else
-      {
-        thermo.correctRho(psi * p - psip0, rhoMin_, rhoMax_);
-        rho = thermo.rho();
-        rho.max(rhoMin_);
-        p_rgh = p - rho * gh;
-        p_rgh.correctBoundaryConditions();
-      }
+        else
+        {
+          thermo.correctRho(psi * p - psip0, rhoMin_, rhoMax_);
+          rho = thermo.rho();
+          rho.max(rhoMin_);
+          p_rgh = p - rho * gh;
+          p_rgh.correctBoundaryConditions();
+        }
+      }  // end while(pimple.correct())
 
-      // rhoEqn for flux correction
+      // rhoEqn for flux correction (once, after all pressure corrections)
       {
         fvScalarMatrix rhoEqn2(fvm::ddt(rho) + fvc::div(phi));
         rhoEqn2.solve();
         rho = thermo.rho();
-        rho.max(rhoMin_); // guard against divide-by-zero in nuEff()
+        rho.max(rhoMin_);
       }
 
       if (thermo.dpdt())
