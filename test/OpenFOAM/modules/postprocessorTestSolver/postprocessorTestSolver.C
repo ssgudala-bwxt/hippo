@@ -92,8 +92,8 @@ Foam::solvers::postprocessorTestSolver::thermophysicalPredictor()
   volScalarField t(IOobject("0", "0", mesh()),
                    mesh(),
                    dimTemperature,
-                   runTime().userTimeValue() * mesh().C().component(0)->internalField(),
-                   runTime().userTimeValue() * mesh().C().component(0)->boundaryField());
+                   runTime().value() * mesh().C().component(0)->internalField(),
+                   runTime().value() * mesh().C().component(0)->boundaryField());
   h = Cp * t;
 
   thermo_.correct();

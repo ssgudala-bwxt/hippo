@@ -51,7 +51,7 @@ Foam::solvers::odeTestSolver::solve()
     while (pimple_.correctNonOrthogonal())
     {
       dimensionedScalar C("C", dimensionSet(0, 0, -1, 1, 0),
-                          1000.0 * mesh().time().userTimeValue());
+                          1000.0 * mesh().time().value());
       fvScalarMatrix TEqn(fvm::ddt(T_) - C);
       TEqn.solve();
     }

@@ -51,7 +51,7 @@ Foam::solvers::functionTestSolver::solve()
 {
   while (pimple_.loop())
   {
-    dimensionedScalar T0("T0", dimTemperature, mesh().time().userTimeValue());
+    dimensionedScalar T0("T0", dimTemperature, mesh().time().value());
     T_ = T0;
     dTdt_ = fvc::ddt(T_);
   }
