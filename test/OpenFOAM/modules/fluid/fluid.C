@@ -156,6 +156,8 @@ Foam::solvers::fluid::solve()
       phiHbyA += phig;
       constrainPressure(p_rgh, rho, U, phiHbyA, rhorAUf, MRF);
 
+      p_rgh.storePrevIter();  // required before relax() in SIMPLE mode
+
       while (pimple.correctNonOrthogonal())
       {
         fvScalarMatrix p_rghEqn(fvm::laplacian(rhorAUf, p_rgh) == fvc::div(phiHbyA));
@@ -190,6 +192,7 @@ Foam::solvers::fluid::solve()
 
       rho = thermo.rho();
       rho.clamp_range(rhoMin_, rhoMax_);
+      rho.storePrevIter();  // required before relax() in SIMPLE mode
       rho.relax();
     }
 
