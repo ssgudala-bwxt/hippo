@@ -94,7 +94,7 @@ Foam::solvers::fluid::solve()
   // --- rhoEqn (first iter) ---
   if (pimple.firstIter())
   {
-    solve(fvm::ddt(rho) + fvc::div(phi));
+    (fvm::ddt(rho) + fvc::div(phi)).solve();
   }
 
   while (pimple.loop())
@@ -111,8 +111,8 @@ Foam::solvers::fluid::solve()
 
     if (pimple.momentumPredictor())
     {
-      Foam::solve(UEqn ==
-                  fvc::reconstruct((-ghf * fvc::snGrad(rho) - fvc::snGrad(p_rgh)) * mesh.magSf()));
+      (UEqn ==
+                  fvc::reconstruct((-ghf * fvc::snGrad(rho) - fvc::snGrad(p_rgh)) * mesh.magSf())).solve();
       fvOptions.correct(U);
       K = 0.5 * magSqr(U);
     }
@@ -201,7 +201,7 @@ Foam::solvers::fluid::solve()
 
       // rhoEqn for flux correction
       {
-        solve(fvm::ddt(rho) + fvc::div(phi));
+        (fvm::ddt(rho) + fvc::div(phi)).solve();
         rho = thermo.rho();
       }
 
