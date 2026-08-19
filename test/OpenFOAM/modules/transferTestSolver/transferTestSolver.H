@@ -1,30 +1,29 @@
 #pragma once
 
 #include "HippoSolver.h"
-#include "solidThermophysicalTransportModel.H"
+#include "fvCFD.H"
+#include "pimpleControl.H"
 
 namespace Foam
 {
 namespace solvers
 {
 
+// Simplified heat-transfer test solver.  Uses a direct fvScalarMatrix Laplacian
+// on a pre-existing T field instead of solidThermophysicalTransportModel, which
+// is not available in this ESI v2606 system deployment.
 class transferTestSolver : public Hippo::HippoSolver
 {
 protected:
   scalar maxDeltaT_;
-  autoPtr<solidThermo> thermoPtr_;
-  solidThermo & thermo_;
   volScalarField T_;
-  autoPtr<solidThermophysicalTransportModel> thermophysicalTransport_;
+  dimensionedScalar kappa_; // thermal diffusivity [m^2/s]
   pimpleControl pimple_;
 
   bool dependenciesModified() const;
   bool read();
-  void moveMeshIfNeeded();
-  void thermophysicalPredictor();
 
 public:
-  const solidThermo & thermo;
   const volScalarField & T;
 
   explicit transferTestSolver(fvMesh & mesh);

@@ -1,17 +1,17 @@
-#include "dimensionSets.H"
-#include "fvMesh.H"
 #include "transferTestSolver.H"
+#include "fvMesh.H"
+#include "fvMatrices.H"
+#include "laplacianScheme.H"
 
-namespace
-{
-Hippo::HippoSolver *
-createTransferTestSolver(Foam::fvMesh & mesh)
+// ---------------------------------------------------------------------------
+// Hippo factory symbol: resolved by HippoSolverRegistry via dlsym after
+// dlopen("libtransferTestSolver.so").
+// ---------------------------------------------------------------------------
+extern "C" Hippo::HippoSolver *
+hippo_solver_factory_transferTestSolver(Foam::fvMesh & mesh)
 {
   return new Foam::solvers::transferTestSolver(mesh);
 }
-
-[[maybe_unused]] const bool registered_transfer_test_solver =
-} // namespace
 
 bool
 Foam::solvers::transferTestSolver::dependenciesModified() const
@@ -23,24 +23,19 @@ bool
 Foam::solvers::transferTestSolver::read()
 {
   maxDeltaT_ = runTime().controlDict().found("maxDeltaT")
-                   ? runTime().controlDict().lookup<scalar>("maxDeltaT", runTime().userUnits())
+                   ? scalar(runTime().controlDict().lookup("maxDeltaT"))
                    : vGreat;
-
   return true;
 }
 
 Foam::solvers::transferTestSolver::transferTestSolver(fvMesh & mesh)
   : Hippo::HippoSolver(mesh),
     maxDeltaT_(vGreat),
-    thermoPtr_(solidThermo::New(mesh)),
-    thermo_(thermoPtr_()),
-    T_(IOobject("T", mesh.time().name(), mesh, IOobject::NO_READ, IOobject::AUTO_WRITE), mesh),
-    thermophysicalTransport_(solidThermophysicalTransportModel::New(thermo_)),
+    T_(IOobject("T", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
+    kappa_("kappa", dimViscosity, 1e-5),
     pimple_(mesh),
-    thermo(thermo_),
     T(T_)
 {
-  thermo.validate("solid", "h", "e");
   read();
 }
 
@@ -58,44 +53,13 @@ Foam::solvers::transferTestSolver::preSolve()
 }
 
 void
-Foam::solvers::transferTestSolver::moveMeshIfNeeded()
-{
-  // Static mesh — no mesh motion needed for test solvers.
-}
-
-void
-Foam::solvers::transferTestSolver::thermophysicalPredictor()
-{
-  volScalarField & e = thermo_.he();
-  const volScalarField & Cv = thermo_.Cv();
-
-  dimensioned<Foam::scalar> t(
-      "t", T_.dimensions() / (dimLength * dimLength), mesh().time().userTimeValue());
-  auto & coords = mesh().C();
-  e = Cv * (dimensionedScalar(T.dimensions(), 0.01) +
-            (coords.component(0) * coords.component(1) + coords.component(1) * coords.component(2) +
-             coords.component(2) * coords.component(0)) *
-                t);
-
-  thermo_.correct();
-}
-
-void
 Foam::solvers::transferTestSolver::solve()
 {
   while (pimple_.loop())
   {
-    moveMeshIfNeeded();
-    thermophysicalPredictor();
+    fvScalarMatrix TEqn(fvm::laplacian(kappa_, T_));
+    TEqn.relax();
+    TEqn.solve();
   }
 }
 
-// ---------------------------------------------------------------------------
-// Hippo factory symbol: resolved by HippoSolverRegistry via dlsym after
-// dlopen("libtransferTestSolver.so").  No dependency on hippo symbols required.
-// ---------------------------------------------------------------------------
-extern "C" Hippo::HippoSolver *
-hippo_solver_factory_transferTestSolver(Foam::fvMesh & mesh)
-{
-  return new Foam::solvers::transferTestSolver(mesh);
-}
