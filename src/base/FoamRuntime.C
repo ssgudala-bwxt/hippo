@@ -42,7 +42,8 @@ FoamRuntime::initAndMakeTime(const std::string & case_dir, MPI_Comm const & comm
 
   if (!_s_arg_list)
   {
-    // First FoamRuntime in this process: build argList to call UPstream::init.
+    // First FoamRuntime: build argList once to call UPstream::init and set up
+    // the parallel file handler (collated/uncollated IO etc.).
     auto & cargs = *(_s_cargs = std::make_unique<cArgs>("foamRun"));
     cargs.push_arg("-case");
     cargs.push_arg(checked);
@@ -53,11 +54,16 @@ FoamRuntime::initAndMakeTime(const std::string & case_dir, MPI_Comm const & comm
 
     _s_arg_list = std::make_unique<Foam::argList>(
         cargs.get_argc(), cargs.get_argv_ptr(), (void *)&comm);
+
+    // Use the argList-based constructor for the first Time object so that the
+    // parallel file handler (which argList sets up) is properly initialised.
+    // This is safe because _s_arg_list was just created for this case_dir.
+    return Foam::Time(Foam::Time::controlDictName, *_s_arg_list);
   }
 
-  // All FoamRuntime instances (including the first) use the rootPath/caseName
-  // constructor so Time never calls argList — and thus never calls
-  // UPstream::setHostCommunicators — again.
+  // Subsequent FoamRuntime instances: argList already initialised MPI and the
+  // file handler.  Use the rootPath/caseName constructor which does not touch
+  // UPstream::setHostCommunicators.
   return Foam::Time(Foam::Time::controlDictName, rootPath, caseName);
 }
 
