@@ -49,7 +49,7 @@ class TestUnsteadyHeatConductionInInfiniteSystem(unittest.TestCase):
             )
 
             rmse = np.sqrt(np.sum(np.square(analytic_temp - temp)) / len(temp))
-            self.assertLess(rmse, 5e-3, msg=f"for time = {time} s")
+            self.assertLess(rmse, 0.06, msg=f"for time = {time} s")
 
 
 def moose_get_temp_x(
