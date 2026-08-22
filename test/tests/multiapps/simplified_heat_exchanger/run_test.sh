@@ -11,7 +11,7 @@ HIPPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 PYTHONPATH="${HIPPO_ROOT}/python:${PYTHONPATH:-}"
 export PYTHONPATH
 
-MODE="${1:-parallel}"
+MODE="${1:-serial}"
 
 cd "${SCRIPT_DIR}"
 
