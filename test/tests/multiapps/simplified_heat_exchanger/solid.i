@@ -186,5 +186,10 @@
 []
 
 [Outputs]
-    exodus = true
+  exodus = true
+  print_linear_residuals = false
+  [console]
+    type = Console
+    execute_on = none
+  []
 []

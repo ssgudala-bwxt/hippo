@@ -18,6 +18,7 @@ thermoType
     energy          sensibleEnthalpy;
 }
 
+kappa 100.0;
 mixture
 {
     specie
