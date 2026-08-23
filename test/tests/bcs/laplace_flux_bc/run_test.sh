@@ -61,7 +61,7 @@ run_expect_err() {
 }
 
 run_check_invalid_diffusivity() {
-  run_expect_err "check_invalid_diffusivity" "Diffusivity 'kappa1' not a Foam volScalarField" \
+  run_expect_err "check_invalid_diffusivity" "Diffusivity 'kappa1' is neither a Foam volScalarField nor a scalar" \
     FoamBCs/T_flux/diffusivity=kappa1
 }
 
