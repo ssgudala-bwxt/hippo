@@ -32,10 +32,6 @@
         type = FoamVariableField
         foam_variable = 'T'
     []
-    [e_shadow]
-        type = FoamVariableField
-        foam_variable = 'e'
-    []
 []
 
 [Postprocessors]
