@@ -1,55 +1,24 @@
-#include "DimensionedField.H"
-#include "dimensionSets.H"
-#include "dimensionedScalar.H"
-#include "dimensionedVector.H"
-#include "fvcFlux.H"
-#include "fvMesh.H"
 #include "postprocessorTestSolver.H"
-#include "scalar.H"
-#include "volFieldsFwd.H"
-#include "volMesh.H"
+#include "fvMesh.H"
 
-namespace
-{
-Hippo::HippoSolver *
-createPostprocessorTestSolver(Foam::fvMesh & mesh)
+extern "C" Hippo::HippoSolver *
+hippo_solver_factory_postprocessorTestSolver(Foam::fvMesh & mesh)
 {
   return new Foam::solvers::postprocessorTestSolver(mesh);
-}
-
-[[maybe_unused]] const bool registered_postprocessor_test_solver =
-} // namespace
-
-bool
-Foam::solvers::postprocessorTestSolver::dependenciesModified() const
-{
-  return runTime().controlDict().modified();
 }
 
 bool
 Foam::solvers::postprocessorTestSolver::read()
 {
-  maxDeltaT_ = runTime().controlDict().found("maxDeltaT")
-                   ? runTime().controlDict().lookup<scalar>("maxDeltaT", runTime().userUnits())
-                   : vGreat;
-
+  maxDeltaT_ = runTime().controlDict().getOrDefault<scalar>("maxDeltaT", 1e15);
   return true;
 }
 
 Foam::solvers::postprocessorTestSolver::postprocessorTestSolver(fvMesh & mesh)
   : Hippo::HippoSolver(mesh),
-    maxDeltaT_(vGreat),
-    thermoPtr_(fluidThermo::New(mesh)),
-    thermo_(thermoPtr_()),
+    maxDeltaT_(1e15),
     U_(IOobject("U", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
-    p_(IOobject("p", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
-    p_rgh_(IOobject("p_rgh", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE),
-           mesh),
     rho_(IOobject("rho", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
-    phi_(IOobject("phi", mesh.time().name(), mesh, IOobject::NO_READ, IOobject::AUTO_WRITE),
-         fvc::flux(U_)),
-    turbulence_(compressible::momentumTransportModel::New(rho_, U_, phi_, thermo_)),
-    thermophysicalTransport_(fluidThermophysicalTransportModel::New(turbulence_(), thermo_)),
     pimple_(mesh)
 {
   read();
@@ -64,57 +33,17 @@ Foam::solvers::postprocessorTestSolver::maxDeltaT() const
 void
 Foam::solvers::postprocessorTestSolver::preSolve()
 {
-  if (dependenciesModified())
-    read();
-
-    }
-
-void
-Foam::solvers::postprocessorTestSolver::moveMeshIfNeeded()
-{
-  if (pimple_.firstIter() || pimple_.moveMeshOuterCorrectors())
-  {
-    if (!mesh().mover().solidBody())
-      FatalErrorInFunction
-          << "Solver postprocessorTestSolver does not support non-solid body mesh motion"
-          << exit(FatalError);
-
-    mesh().move();
-  }
-}
-
-void
-Foam::solvers::postprocessorTestSolver::thermophysicalPredictor()
-{
-  volScalarField & h = thermo_.he();
-  const volScalarField & Cp = thermo_.Cp();
-
-  volScalarField t(IOobject("0", "0", mesh()),
-                   mesh(),
-                   dimTemperature,
-                   runTime().value() * mesh().C().component(0)->internalField(),
-                   runTime().value() * mesh().C().component(0)->boundaryField());
-  h = Cp * t;
-
-  thermo_.correct();
+  read();
 }
 
 void
 Foam::solvers::postprocessorTestSolver::solve()
 {
+  // This test solver only exists to hold U/rho fields for FoamBC/FoamPostprocessor
+  // coupling exercises (e.g. FoamMassFlowRateInletBC, FoamSideAdvectiveFluxIntegral).
+  // No physics is solved; MOOSE drives U/rho via imposed boundary conditions each
+  // timestep, so simply advance the PIMPLE loop counter without further computation.
   while (pimple_.loop())
   {
-    moveMeshIfNeeded();
-    thermophysicalPredictor();
   }
-}
-
-// ---------------------------------------------------------------------------
-// Hippo factory symbol: resolved by HippoSolverRegistry via dlsym after
-// dlopen("libpostprocessorTestSolver.so").  No dependency on hippo symbols required.
-// ---------------------------------------------------------------------------
-extern "C" Hippo::HippoSolver *
-hippo_solver_factory_postprocessorTestSolver(Foam::fvMesh & mesh)
-{
-  return new Foam::solvers::postprocessorTestSolver(mesh);
 }

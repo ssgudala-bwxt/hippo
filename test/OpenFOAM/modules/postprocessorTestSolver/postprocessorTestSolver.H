@@ -1,37 +1,27 @@
 #pragma once
 
 #include "HippoSolver.h"
-
-#include "compressibleMomentumTransportModel.H"
-#include "fluidThermo.H"
-#include "fluidThermophysicalTransportModel.H"
-#include "surfaceFields.H"
-#include "volFields.H"
+#include "fvCFD.H"
+#include "pimpleControl.H"
 
 namespace Foam
 {
 namespace solvers
 {
 
+// Postprocessor test solver: only reads/holds U and rho fields to exercise
+// FoamBC/FoamPostprocessor coupling (e.g. FoamMassFlowRateInletBC,
+// FoamSideAdvectiveFluxIntegral). Deliberately avoids fluidThermo/turbulence
+// dependencies since minimal OpenFOAM installs may not ship those libraries.
 class postprocessorTestSolver : public Hippo::HippoSolver
 {
 protected:
   scalar maxDeltaT_;
-  autoPtr<fluidThermo> thermoPtr_;
-  fluidThermo & thermo_;
   volVectorField U_;
-  volScalarField p_;
-  volScalarField p_rgh_;
   volScalarField rho_;
-  surfaceScalarField phi_;
-  autoPtr<compressible::momentumTransportModel> turbulence_;
-  autoPtr<fluidThermophysicalTransportModel> thermophysicalTransport_;
   pimpleControl pimple_;
 
-  bool dependenciesModified() const;
   bool read();
-  void moveMeshIfNeeded();
-  void thermophysicalPredictor();
 
 public:
   explicit postprocessorTestSolver(fvMesh & mesh);
