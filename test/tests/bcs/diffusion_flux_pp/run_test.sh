@@ -67,23 +67,47 @@ run_diffusivity_err() {
 
 run_run() {
   step "run: hippo-opt (serial)"
-  srun --mpi=pmi2 -K -n 1 hippo-opt -i main.i
+  if srun --mpi=pmi2 -K -n 1 hippo-opt -i main.i; then
+    echo "PASS (run)"
+    PASS=$((PASS + 1))
+  else
+    echo "FAILED (run): hippo-opt exited non-zero"
+    FAIL=$((FAIL + 1))
+  fi
 }
 
 run_verify() {
   step "verify: analytical comparison"
-  python3 -m pytest test.py -v
+  if python3 -m pytest test.py -v; then
+    echo "PASS (verify)"
+    PASS=$((PASS + 1))
+  else
+    echo "FAILED (verify)"
+    FAIL=$((FAIL + 1))
+  fi
 }
 
 run_diffusivity_cv() {
   step "run_diffusivity_cv: hippo-opt (diffusivity=Cv)"
-  srun --mpi=pmi2 -K -n 1 hippo-opt -i main.i \
-    FoamBCs/T_flux/diffusivity='Cv' Postprocessors/T_flux/expression='t'
+  if srun --mpi=pmi2 -K -n 1 hippo-opt -i main.i \
+    FoamBCs/T_flux/diffusivity='Cv' Postprocessors/T_flux/expression='t'; then
+    echo "PASS (run_diffusivity_cv)"
+    PASS=$((PASS + 1))
+  else
+    echo "FAILED (run_diffusivity_cv): hippo-opt exited non-zero"
+    FAIL=$((FAIL + 1))
+  fi
 }
 
 run_verify_diffusivity_cv() {
   step "verify_diffusivity_cv: analytical comparison"
-  python3 -m pytest test.py -v
+  if python3 -m pytest test.py -v; then
+    echo "PASS (verify_diffusivity_cv)"
+    PASS=$((PASS + 1))
+  else
+    echo "FAILED (verify_diffusivity_cv)"
+    FAIL=$((FAIL + 1))
+  fi
 }
 
 summary() {
