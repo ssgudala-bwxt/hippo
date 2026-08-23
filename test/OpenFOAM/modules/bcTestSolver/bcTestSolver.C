@@ -45,7 +45,12 @@ Foam::solvers::bcTestSolver::solve()
 {
   while (pimple_.loop())
   {
-    fvScalarMatrix TEqn(fvm::ddt(T_) - fvm::laplacian(kappa_, T_));
+    // Pure (steady) Laplace solve: T is re-solved to convergence against the
+    // current boundary conditions every call, with no transient (ddt) term.
+    // This lets each MOOSE/OpenFOAM coupling step reproduce the exact
+    // analytical Laplace solution implied by the imposed BCs, matching what
+    // the "laplace_*"/"*_pp" BC tests check against.
+    fvScalarMatrix TEqn(fvm::laplacian(kappa_, T_));
     TEqn.relax();
     TEqn.solve();
   }
