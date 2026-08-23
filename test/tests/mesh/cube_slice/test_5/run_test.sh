@@ -16,8 +16,11 @@ run_setup() {
 }
 
 run_case() {
-  step "run: hippo-opt (n=4)"
-  srun --mpi=pmi2 -K -n 4 hippo-opt -i run.i --allow-test-objects
+  # rank count = dx * dy * dz from the config file (line 2)
+  read -r dx dy dz < <(sed -n '2p' config)
+  n=$((dx * dy * dz))
+  step "run: hippo-opt (n=${n})"
+  srun --mpi=pmi2 -K -n "${n}" hippo-opt -i run.i --allow-test-objects
 }
 
 run_verify() {
