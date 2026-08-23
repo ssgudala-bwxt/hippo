@@ -37,7 +37,7 @@ expected_elem=$(awk 'NR==1 {nx=$1; ny=$2; nz=$3}
                     }}}
                     print sum;}' $1)
 #Get the same number from exodiff
-actual_elem=$( $EXODIFF --summary $3 | awk '/Elements/ {print $13 + 0}')
+actual_elem=$( $EXODIFF --summary $2 | awk '/Elements/ {print $13 + 0}')
 
 if [ $actual_elem -ne $expected_elem ]; then
     echo "unexpected number of elements in moose mesh == $actual_elem, expecting $expected_elem"
