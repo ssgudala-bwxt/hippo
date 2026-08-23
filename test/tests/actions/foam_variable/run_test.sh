@@ -13,12 +13,28 @@ cd "${SCRIPT_DIR}"
 
 step() { echo; echo "=== $* ==="; }
 
+# foamCleanCase is not available in all OpenFOAM installs (e.g. minimal/site
+# builds without bin/tools/CleanFunctions). Reimplement the equivalent
+# cleanup manually: drop generated time directories (keep the initial "0"),
+# decomposed processor dirs, and other run artifacts.
+clean_case() {
+  local dir="$1"
+  rm -rf "${dir}"/constant/polyMesh "${dir}"/processor* "${dir}"/postProcessing \
+         "${dir}"/VTK "${dir}"/dynamicCode "${dir}"/probes "${dir}"/*.foam "${dir}"/log.*
+  local d
+  for d in "${dir}"/[0-9]*; do
+    [ -e "$d" ] || continue
+    [ "$(basename "$d")" = "0" ] && continue
+    rm -rf "$d"
+  done
+}
+
 PASS=0
 FAIL=0
 
 run_setup() {
-  step "setup: foamCleanCase + blockMesh"
-  foamCleanCase -case foam
+  step "setup: clean_case + blockMesh"
+  clean_case foam
   blockMesh -case foam
 }
 
