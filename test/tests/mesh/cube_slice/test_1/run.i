@@ -8,10 +8,6 @@
     type = FoamVariableField
     foam_variable = T
   []
-  [hf]
-    type = FoamFunctionObject
-    foam_variable = wallHeatFlux
-  []
 []
 
 [FoamBCs]
