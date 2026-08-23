@@ -38,6 +38,12 @@ inline readConstantDiffusivityFromPhysicalProperties(const Foam::fvMesh & mesh,
       if (transport.found(name))
         return transport.get<Foam::scalar>(name);
     }
+    if (mixture.found("thermodynamics"))
+    {
+      const auto & thermodynamics = mixture.subDict("thermodynamics");
+      if (thermodynamics.found(name))
+        return thermodynamics.get<Foam::scalar>(name);
+    }
   }
 
   return std::nullopt;
