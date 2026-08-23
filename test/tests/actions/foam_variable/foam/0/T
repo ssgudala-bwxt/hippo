@@ -22,33 +22,27 @@ boundaryField
 {
     left
     {
-        type            calculated;
-        value           uniform 0.;
+        type            zeroGradient;
     }
     right
     {
-        type            calculated;
-        value           uniform 0.;
+        type            zeroGradient;
     }
     top
     {
-        type            calculated;
-        value           uniform 0.;
+        type            zeroGradient;
     }
     bottom
     {
-        type            calculated;
-        value           uniform 0.;
+        type            zeroGradient;
     }
     back
     {
-        type            calculated;
-        value           uniform 0.;
+        type            zeroGradient;
     }
     front
     {
-        type            calculated;
-        value           uniform 0.;
+        type            zeroGradient;
     }
 }
 
