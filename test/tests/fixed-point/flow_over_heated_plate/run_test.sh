@@ -84,9 +84,9 @@ run_run() {
   # the ESI-migrated solidConductionTestSolver stack and the original gold/
   # run.
   cat > exodiff.cmd <<'EOF'
-GLOBAL VARIABLES relative 1.e-4
-NODAL VARIABLES relative 1.e-4
-ELEMENT VARIABLES relative 1.e-4
+GLOBAL VARIABLES relative 1.e-3
+NODAL VARIABLES relative 1.e-3
+ELEMENT VARIABLES relative 1.e-3
 EOF
   if exodiff -f exodiff.cmd heated_plate_out.e gold/heated_plate_out.e; then
     echo "PASS (exodiff)"

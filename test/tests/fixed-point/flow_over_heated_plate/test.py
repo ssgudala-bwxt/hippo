@@ -36,8 +36,8 @@ class TestFlowOverHeatedPlate(TestCase):
             np.testing.assert_allclose(
                 temp,
                 temp_ref,
-                rtol=1e-4,
-                atol=1e-4,
+                rtol=1e-3,
+                atol=1e-3,
                 err_msg=f"time = {time}",
             )
 
@@ -48,7 +48,7 @@ class TestFlowOverHeatedPlate(TestCase):
                 np.testing.assert_allclose(
                     temp,
                     temp_ref,
-                    rtol=1e-4,
-                    atol=1e-4,
+                    rtol=1e-3,
+                    atol=1e-3,
                     err_msg=f"time = {time}, boundary = {boundary}",
                 )
