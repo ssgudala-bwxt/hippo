@@ -34,6 +34,12 @@ FoamSideIntegratedFunctionObject::createFunctionObject(const std::string & fo_na
 
   fo_dict.set("patches", patch_names);
   fo_dict.set("writeToFile", false);
+  // wallHeatFlux/wallShearStress register their result field under a fixed
+  // name (scopedName(typeName), e.g. "wallHeatFlux") unless useNamePrefix is
+  // enabled, in which case the field is registered as "<name>:<typeName>".
+  // Without this, two postprocessors both using the same function_object
+  // type in one input file collide on the same objectRegistry entry.
+  fo_dict.set("useNamePrefix", true);
 
   // Use this postprocessor's own (unique) name for the underlying function
   // object rather than a fixed name. Each function object registers a field
