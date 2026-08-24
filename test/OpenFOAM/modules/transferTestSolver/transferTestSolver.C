@@ -33,15 +33,13 @@ Foam::solvers::transferTestSolver::transferTestSolver(fvMesh & mesh)
     maxDeltaT_(1e15),
     T_(IOobject("T", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
     pThermo_(solidThermo::New(mesh)),
-    kappa_("kappa", dimViscosity, 1e-5),
     pimple_(mesh),
     T(T_)
 {
-  // pThermo_ is registered in the mesh object registry by solidThermo's own
-  // constructor; it is only used here so that functionObjects (e.g.
-  // wallHeatFlux) can find a valid solidThermo model to compute alpha()/he()
-  // from. This solver itself still integrates T_ directly via a simple
-  // Laplacian, so pThermo_'s internal energy field is not otherwise used.
+  // pThermo_ constructs its own T from the registry (same underlying object
+  // as T_ above, since both look up "T"), and is registered in the mesh
+  // object registry by solidThermo's own constructor so functionObjects can
+  // find it.
   read();
 }
 
@@ -61,13 +59,24 @@ Foam::solvers::transferTestSolver::preSolve()
 void
 Foam::solvers::transferTestSolver::solve()
 {
-  while (pimple_.loop())
-  {
-    // Transient heat diffusion: dT/dt = kappa * laplacian(T)
-    // Requires both ddt and laplacian to avoid singular all-Neumann system.
-    fvScalarMatrix TEqn(fvm::ddt(T_) - fvm::laplacian(kappa_, T_));
-    TEqn.relax();
-    TEqn.solve();
-  }
+  // Directly impose the analytic profile e = Cv*(0.01 + (xy+yz+zx)*t) each
+  // timestep (matching test.py's expected T_shadow reference), then let the
+  // solidThermo model back out T from e via correct(). This intentionally
+  // does not solve a diffusion PDE - it only needs to drive T and (via
+  // wallHeatFlux) the boundary heat flux to known analytic values for the
+  // variable-shadowing/functionObject-shadowing tests.
+  volScalarField & e = pThermo_->he();
+  const volScalarField & Cv = pThermo_->Cv();
+
+  dimensionedScalar t("t", T_.dimensions() / (dimLength * dimLength), mesh().time().timeOutputValue());
+  const volVectorField & coords = mesh().C();
+
+  e = Cv
+    * (dimensionedScalar(T_.dimensions(), 0.01)
+       + (coords.component(0) * coords.component(1) + coords.component(1) * coords.component(2)
+          + coords.component(2) * coords.component(0))
+         * t);
+
+  pThermo_->correct();
 }
 
