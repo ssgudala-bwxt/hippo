@@ -86,11 +86,9 @@ Foam::solvers::transferTestSolver::solve()
   volScalarField sumTerm = base + xyzTermT;
 
   T_ = sumTerm;
-  T_.correctBoundaryConditions();
 
   volScalarField & e = pThermo_->he();
   e = Cp * T_;
-  e.correctBoundaryConditions();
 
   pThermo_->correct();
 }
