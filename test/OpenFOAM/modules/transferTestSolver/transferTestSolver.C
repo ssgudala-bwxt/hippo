@@ -59,15 +59,20 @@ Foam::solvers::transferTestSolver::preSolve()
 void
 Foam::solvers::transferTestSolver::solve()
 {
-  // Directly impose the analytic profile he = Cp*(0.01 + (xy+yz+zx)*t) each
-  // timestep (matching test.py's expected T_shadow reference), then let the
-  // solidThermo model back out T from he via correct(). he()/Cp() are used
-  // (rather than an internal-energy/Cv formulation) because thermoType's
-  // energy is sensibleEnthalpy, so he() == h == Cp*T. This intentionally does
-  // not solve a diffusion PDE - it only needs to drive T and (via
-  // wallHeatFlux) the boundary heat flux to known analytic values for the
-  // variable-shadowing/functionObject-shadowing tests.
-  volScalarField & e = pThermo_->he();
+  // Directly impose the analytic profile T = 0.01 + (xy+yz+zx)*t each
+  // timestep (matching test.py's expected T_shadow reference).
+  //
+  // NOTE: T_ is registered in the mesh's objectRegistry by this solver
+  // (before pThermo_ is constructed), so basicThermo::lookupOrConstruct()
+  // finds it via NO_READ/re-use and sets TOwner_ = false. That means
+  // solidThermo::correct() (heSolidThermo::calculate()) will NOT recompute T
+  // from he - it treats T as externally owned/updated (see
+  // basicThermo::updateT()/TOwner_). So we must set T_ directly here rather
+  // than going through he()/Cv()/Cp() and expecting correct() to invert it.
+  // he() is then updated manually (he = Cp*T, since thermoType's energy is
+  // sensibleEnthalpy) so wallHeatFlux (which reads thermo.alpha()/thermo.he())
+  // sees a consistent boundary gradient. correct() is still called afterwards
+  // to refresh rho_/alpha_ from the new T_.
   tmp<volScalarField> tCp = pThermo_->Cp();
   const volScalarField & Cp = tCp();
 
@@ -80,7 +85,12 @@ Foam::solvers::transferTestSolver::solve()
   dimensionedScalar base(T_.dimensions(), 0.01);
   volScalarField sumTerm = base + xyzTermT;
 
-  e = Cp * sumTerm;
+  T_ = sumTerm;
+  T_.correctBoundaryConditions();
+
+  volScalarField & e = pThermo_->he();
+  e = Cp * T_;
+  e.correctBoundaryConditions();
 
   pThermo_->correct();
 }
