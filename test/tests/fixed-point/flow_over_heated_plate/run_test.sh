@@ -79,10 +79,16 @@ run_run() {
   fi
   # Small (~1e-5) relative round-off differences are expected here (not the
   # CN+fixed-point limitation -- this test uses Euler time integration).
-  # Use a relative tolerance to accommodate benign numeric noise from
-  # decomposition/solve-order differences between the ESI-migrated
-  # solidConductionTestSolver stack and the original gold/ run.
-  if exodiff -relative 1e-4 heated_plate_out.e gold/heated_plate_out.e; then
+  # Use a relative tolerance (via an exodiff command file) to accommodate
+  # benign numeric noise from decomposition/solve-order differences between
+  # the ESI-migrated solidConductionTestSolver stack and the original gold/
+  # run.
+  cat > exodiff.cmd <<'EOF'
+GLOBAL VARIABLES relative 1.e-4
+NODAL VARIABLES relative 1.e-4
+ELEMENT VARIABLES relative 1.e-4
+EOF
+  if exodiff -f exodiff.cmd heated_plate_out.e gold/heated_plate_out.e; then
     echo "PASS (exodiff)"
     PASS=$((PASS + 1))
   else
