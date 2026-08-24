@@ -15,5 +15,5 @@ void
 FoamSideAverageFunctionObject::compute()
 {
   _function_object->execute();
-  _value = integrateValue(_function_object->name()) / getArea();
+  _value = integrateValue(_field_name) / getArea();
 }
