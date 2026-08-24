@@ -39,6 +39,14 @@ solvers
     }
 
 
+    "h|hFinal"
+    {
+        solver           PBiCGStab;
+        preconditioner   DIC;
+        tolerance        1e-8;
+        relTol           1e-8;
+    }
+
     "e|eFinal"
     {
         solver           PBiCGStab;
