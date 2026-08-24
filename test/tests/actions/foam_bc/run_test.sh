@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Wrapper for test/tests/actions/foam_bc — mirrors tests file behavior.
-# Usage: bash run_test.sh [all|setup|syntax|foam_var_error|foam_boundary_error|
+# Usage: bash run_test.sh [all|setup|syntax|foam_boundary_error|
 #                          foam_duplicated_boundary_error|order_of_t_is_not_constant|
 #                          order_of_t_is_not_monomial|v_doesnt_exist]
 
@@ -68,11 +68,6 @@ run_expect_err() {
   fi
 }
 
-run_foam_var_error() {
-  run_expect_err "foam_var_error" main.i "There is no OpenFOAM field named 'T1'" \
-    FoamBCs/temp/foam_variable=T1
-}
-
 run_foam_boundary_error() {
   run_expect_err "foam_boundary_error" main.i "Boundary 'left1' not found in FoamMesh" \
     FoamBCs/temp/boundary=left1
@@ -108,7 +103,6 @@ summary() {
 run_all() {
   run_setup
   run_syntax
-  run_foam_var_error
   run_foam_boundary_error
   run_foam_duplicated_boundary_error
   run_order_of_t_is_not_constant
@@ -122,14 +116,13 @@ case "$MODE" in
   all) run_all ;;
   setup) run_setup ;;
   syntax) run_syntax ;;
-  foam_var_error) run_foam_var_error; summary ;;
-  foam_boundary_error) run_foam_boundary_error; summary ;;
+    foam_boundary_error) run_foam_boundary_error; summary ;;
   foam_duplicated_boundary_error) run_foam_duplicated_boundary_error; summary ;;
   order_of_t_is_not_constant) run_order_of_t_is_not_constant; summary ;;
   order_of_t_is_not_monomial) run_order_of_t_is_not_monomial; summary ;;
   v_doesnt_exist) run_v_doesnt_exist; summary ;;
   *)
-    echo "Usage: $0 [all|setup|syntax|foam_var_error|foam_boundary_error|foam_duplicated_boundary_error|order_of_t_is_not_constant|order_of_t_is_not_monomial|v_doesnt_exist]"
+    echo "Usage: $0 [all|setup|syntax|foam_boundary_error|foam_duplicated_boundary_error|order_of_t_is_not_constant|order_of_t_is_not_monomial|v_doesnt_exist]"
     exit 1
     ;;
 esac

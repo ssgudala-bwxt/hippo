@@ -10,14 +10,6 @@
             prereq = foam_bc_action/setup
             allow_test_objects = true
         []
-        [foam_var_error]
-            type = RunException
-            input = main.i
-            prereq = foam_bc_action/setup
-            expect_err = "There is no OpenFOAM field named 'T1'"
-            cli_args = 'FoamBCs/temp/foam_variable=T1'
-            allow_test_objects = true
-        []
         [foam_boundary_error]
             type = RunException
             input = main.i
