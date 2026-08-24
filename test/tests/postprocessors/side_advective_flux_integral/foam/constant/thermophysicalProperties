@@ -10,7 +10,7 @@ FoamFile
     format      ascii;
     class       dictionary;
     location    "constant";
-    object      physicalProperties;
+    object      thermophysicalProperties;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -41,6 +41,7 @@ mixture
     {
         kappa           1;         // Thermal conductivity [W/(m·K)]
         mu              1.;
+        Pr              1.;
     }
     equationOfState
     {
