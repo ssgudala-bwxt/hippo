@@ -29,14 +29,22 @@ class TestFlowOverHeatedPlate(TestCase):
             # internal data
             temp = ff.readof.readscalar(case_dir, time, "T")
             temp_ref = ff.readof.readscalar(ref_dir, time, "T")
-            assert np.array_equal(temp_ref, temp), (
-                f"Max diff: {abs(temp - temp_ref).max()}"
+            # NOTE: gold/ was generated with the original OpenFOAM stack; the
+            # ESI-migrated solidConductionTestSolver stack matches to ~10
+            # significant digits but not bit-for-bit, so use a numeric
+            # tolerance instead of exact equality.
+            np.testing.assert_allclose(
+                temp, temp_ref, rtol=1e-8, atol=1e-8, err_msg=f"time = {time}"
             )
 
             # boundary data
             for boundary in boundaries:
                 temp = ff.readof.readscalar(case_dir, time, "T", boundary=boundary)
                 temp_ref = ff.readof.readscalar(ref_dir, time, "T", boundary=boundary)
-                assert np.array_equal(temp_ref, temp), (
-                    f"Max diff: {abs(temp - temp_ref).max()}"
+                np.testing.assert_allclose(
+                    temp,
+                    temp_ref,
+                    rtol=1e-8,
+                    atol=1e-8,
+                    err_msg=f"time = {time}, boundary = {boundary}",
                 )

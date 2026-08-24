@@ -69,7 +69,16 @@ run_restart() {
   fi
   # tests file: gold_dir = '../heated_plate_converge' (compare against that
   # test's regression gold, not a local gold/ dir).
-  if exodiff heated_plate_out.e "${SCRIPT_DIR}/../heated_plate_converge/gold/heated_plate_out.e"; then
+  # NOTE: small round-off differences (up to ~1.8e-3 relative on
+  # wall_heat_flux) are expected here due to the OpenFOAM/solver stack
+  # migration to ESI OpenFOAM v2606, same as flow_over_heated_plate and
+  # heated_plate_converge.
+  cat > exodiff.cmd <<'EOF'
+GLOBAL VARIABLES relative 1.e-3
+NODAL VARIABLES relative 1.e-3
+ELEMENT VARIABLES relative 1.e-2
+EOF
+  if exodiff -f exodiff.cmd heated_plate_out.e "${SCRIPT_DIR}/../heated_plate_converge/gold/heated_plate_out.e"; then
     echo "PASS (exodiff)"
     PASS=$((PASS + 1))
   else
