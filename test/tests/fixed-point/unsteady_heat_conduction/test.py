@@ -26,13 +26,25 @@ class TestUnsteadyHeatConductionInInfiniteSystem(unittest.TestCase):
                 RUN_DIR / "gold" / "main_out.e", time, "T"
             )
 
-            # NOTE: gold/ was generated with the original OpenFOAM "solid"
-            # solver, which no longer exists in ESI OpenFOAM. Since migrating
-            # to solidConductionTestSolver, results match to ~13 significant
-            # digits but not bit-for-bit (different linear solver/algorithm
-            # round-off), so use a tight numeric tolerance instead of exact
-            # equality.
-            np.testing.assert_allclose(solid_temp, solid_temp_ref, rtol=1e-8, atol=1e-8)
+            # KNOWN LIMITATION: foam/system/fvSchemes uses
+            # ddtSchemes { default CrankNicolson 1; }. Crank-Nicolson +
+            # fixed-point iteration has a documented accuracy loss (see the
+            # comment on removeOldTime() in include/mesh/FoamDataStore.h:
+            # "Schemes known not to work: Crank-Nicolson. Current behaviour
+            # does not clear the old time base field for CN even though this
+            # would result in a small error compared to not using
+            # fixed-point."). This causes a real (not roundoff) drift of the
+            # coupled solid T field vs. the single-iteration gold/ reference,
+            # so this assertion is expected to fail until that limitation is
+            # addressed in Hippo's core fixed-point restore logic.
+            np.testing.assert_allclose(
+                solid_temp,
+                solid_temp_ref,
+                rtol=1e-8,
+                atol=1e-8,
+                err_msg="EXPECTED: known Crank-Nicolson + fixed-point limitation, "
+                "see FoamDataStore.h removeOldTime() comment",
+            )
 
     def test_fluid_fixed_point(self):
         times = get_foam_times("foam")

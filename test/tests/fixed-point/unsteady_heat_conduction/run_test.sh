@@ -72,11 +72,15 @@ run_run() {
 
 run_verify() {
   step "verify: compare solid/fluid fields against gold/"
+  # KNOWN LIMITATION: test_solid_fixed_point is expected to fail for the same
+  # Crank-Nicolson + fixed-point reason as the exodiff step above (see
+  # FoamDataStore.h removeOldTime() comment); test_fluid_fixed_point should
+  # still pass (roundoff-only tolerance).
   if python3 -m pytest test.py -v; then
     echo "PASS (verify)"
     PASS=$((PASS + 1))
   else
-    echo "FAILED (verify)"
+    echo "FAILED (verify) [test_solid_fixed_point EXPECTED to fail: known Crank-Nicolson + fixed-point limitation, see FoamDataStore.h removeOldTime() comment]"
     FAIL=$((FAIL + 1))
   fi
 }
