@@ -777,6 +777,54 @@ item 21) to skip `FoamSolverAdapter` auto-creation entirely when
 `solve = false`, so these cases no longer attempt (and fail) to instantiate a
 non-existent `"icoFoam"` `Foam::solver`.
 
+### 22.5 `run_test.sh` bash conversion of `test/tests/actions/*` and `test/tests/bcs/*`
+
+Since the MOOSE TestHarness could not be run directly on the system,
+each `test/tests/actions/*` and all 8 `test/tests/bcs/*` cases were given a
+standalone `run_test.sh` wrapper (setup/run/verify/parallel modes) that
+replicates the exact commands the corresponding `tests` file would have
+invoked. Along the way this surfaced several case-specific bugs, fixed as
+part of the conversion:
+
+- **`wallHeatFlux` misuse / missing `Cv`**: some cases queried `wallHeatFlux`
+  or relied on thermodynamics lookups (`Cv`) that weren't present in
+  `thermophysicalProperties`; added the missing entries (see item 24.4 for
+  the general `heSolidThermo` type-combination constraints this bumps into).
+- **`exodiff` argument bug**: `run_test.sh`'s `check.sh`-equivalent logic was
+  passing no files to `exodiff` in some verify steps (`exodiff: ERROR: no
+  files specified`) — fixed the argument list construction.
+- **Hardcoded processor counts**: several `tests` files hardcode `min_parallel`/
+  `max_parallel`; the bash scripts now read the actual case's
+  `decomposeParDict` `numberOfSubdomains` instead of hardcoding a count.
+  a `[: -ne: unary operator expected` bug from an empty exodiff variable was
+  fixed the same way.
+- **Transient vs. steady Laplace bug**: one case's solver was solving a
+  transient equation when the `tests` spec expected a steady-state (or vice
+  versa); fixed to match the declared test behavior.
+- **`calculated` → `zeroGradient` boundary conditions**: several `0/*` field
+  files used `type calculated;` (which requires an externally-supplied
+  `value`, and doesn't behave as a real BC) where `zeroGradient` was actually
+  intended.
+- **Missing `foamCleanCase`**: the bash scripts don't have MOOSE's
+  TestHarness-provided case cleanup, so a custom `clean_case()` bash function
+  (mirroring `foamCleanCase`/removing time directories via `find`) was added
+  to each `run_test.sh`.
+- **Stale `expect_err` strings**: some `tests` files' expected-error text no
+  longer matched ESI v2606's actual error wording; updated to match.
+- **`residualControl` needing sub-dictionaries**: ESI v2606's `fvSolution`
+  `SIMPLE`/`PIMPLE` `residualControl` requires field-name sub-dictionaries
+  (e.g. `p { tolerance ...; }`) rather than Foundation's flatter form.
+- **`thermophysicalProperties`/`turbulenceProperties` naming**: same rename
+  as item 22.2, needed wherever a `bcs`/`actions` case used a real thermo/
+  turbulence model rather than `transferTestSolver`.
+- **`simulationType laminar` vs. `RAS` + `turbulence off`**: ESI expects
+  `simulationType laminar;` in `momentumTransport` for non-turbulent cases,
+  where some Foundation-era cases instead used `simulationType RAS;` with
+  `turbulence off;` (a Foundation idiom no longer honored the same way).
+
+All of `actions/*` and `bcs/*` pass with their `run_test.sh` wrappers after
+these fixes.
+
 ---
 
 ## Known limitations / items needing follow-up
@@ -895,3 +943,190 @@ fvSolution changes vs Foundation:
 | rho solver | DICPCG | diagonal |
 | PIMPLE block | Not required | Required even in SIMPLE mode (pimpleControl reads it) |
 | rhoMin/rhoMax | Not needed | pMin/pMinFactor preferred; rhoMin/rhoMax accepted with warning |
+
+---
+
+## 24. `test/tests/variables/foam_variable` — `transferTestSolver` + `solidThermo` registration
+
+This test shadows an OpenFOAM `volScalarField` (`T`) and a functionObject
+output (`wallHeatFlux`) into MOOSE `FoamVariable`s (`T_shadow`, `whf_shadow`)
+and checks them against a closed-form analytic profile
+`T = 0.01 + (xy + yz + zx)*t`. The `transferTestSolver` module (a minimal
+`HippoSolver` used only by this test) does not solve a real PDE — it directly
+imposes the analytic profile onto the OpenFOAM fields every timestep. Getting
+this working under ESI required several fixes, listed here as a reference for
+similar minimal/synthetic solver modules.
+
+### 24.1 `wallHeatFlux` requires a registered thermo/turbulence model
+
+`Foam::wallHeatFluxModels::wall::execute()`
+(`src/functionObjects/field/wallHeatFlux/wallHeatFluxModels/wall/wallHeatFlux_wall.cxx`)
+looks up, in order: `compressible::turbulenceModel` →
+`fluidThermo` → `solidThermo` → `multiphaseInterSystem`, and throws
+`FatalError("Unable to find compressible turbulence model in the database")`
+if none are registered in the mesh's `objectRegistry`. A bare test solver with
+no thermo/turbulence model (as `transferTestSolver` originally was) will
+always hit this fallthrough.
+
+**Fix**: register the lightest-weight option, `solidThermo`, in the test
+solver:
+```cpp
+// transferTestSolver.H
+#include "solidThermo.H"
+autoPtr<solidThermo> pThermo_;
+
+// transferTestSolver.C (constructor init list, after T_ is constructed)
+pThermo_(solidThermo::New(mesh))
+```
+`solidThermo::New(mesh)` requires `constant/thermophysicalProperties` (not
+the old `physicalProperties` name — see item 24.4) and requires **both**
+`0/T` and `0/p` to exist as real files, even though only `T` is otherwise
+used, because `basicThermo`'s constructor calls
+`lookupOrConstruct(mesh, "p", pOwner_)` unconditionally, which does an
+`IOobject::MUST_READ` if `p` isn't already registered.
+
+`Make/options` needs additional include/lib flags to link solidThermo:
+```
+-I$(LIB_SRC)/thermophysicalModels/basic/lnInclude
+-I$(LIB_SRC)/thermophysicalModels/solidThermo/lnInclude
+-I$(LIB_SRC)/thermophysicalModels/specie/lnInclude
+-I$(LIB_SRC)/transportModels/compressible/lnInclude
+...
+-lfluidThermophysicalModels -lsolidThermo -lspecie -lcompressibleTransportModels
+```
+
+### 24.2 `tmp<volScalarField>`-returning accessors must be held alive
+
+`basicThermo::Cp()`/`Cv()`/etc. return `tmp<volScalarField>` (a temporary).
+Binding the result directly to a reference —
+`const volScalarField& Cp = pThermo_->Cp();` — is a dangling-reference bug:
+the underlying temporary is destroyed at the end of the full expression,
+leaving `Cp` pointing at freed/reused memory. Reads through it can silently
+return garbage (this manifested as a bogus `dimensionSet` on a downstream
+multiplication, which took significant debugging to trace back to this).
+
+**Fix**: always hold the `tmp<>` in a local variable first:
+```cpp
+tmp<volScalarField> tCp = pThermo_->Cp();
+const volScalarField& Cp = tCp();
+```
+This applies to any OpenFOAM thermo/transport accessor that returns
+`tmp<...>` (`Cp()`, `Cv()`, `alpha()`, `rho()`, `kappa()`, etc.) — `he()` is
+an exception, since `basicThermo::he()` returns a real mutable
+`volScalarField&`, not a `tmp<>`.
+
+### 24.3 A field already registered by your solver disables `solidThermo`'s ownership of it
+
+`basicThermo`'s constructor does
+`T_(lookupOrConstruct(mesh, phasePropertyName("T"), TOwner_))`. If `T` is
+already registered in the `objectRegistry` (as it is here, since
+`transferTestSolver` constructs/owns `T_` itself before `pThermo_` is
+constructed), `lookupOrConstruct` reuses it and sets `TOwner_ = false`. This
+means `basicThermo::updateT()` returns `false`, and
+`heSolidThermo::calculate()` (called from `solidThermo::correct()`) will
+**never recompute `T` from `he`** — it treats `T` as externally owned/driven.
+
+**Practical effect**: calling `pThermo_->correct()` after setting `he` does
+*not* update `T`. If your solver wants `correct()` to invert `he → T`, don't
+pre-register `T` before constructing the thermo model. In this test, the
+opposite was actually wanted (`T` is the analytically-driven quantity), so
+the fix was to set `T_` directly each step rather than relying on
+`correct()` to back it out from `he`.
+
+### 24.4 `constant/physicalProperties` → `constant/thermophysicalProperties`
+
+`basicThermo::dictName` (ESI) is `"thermophysicalProperties"`, not the
+Foundation-era `physicalProperties`. Renaming the file is necessary for
+`solidThermo::New(mesh)` to find it at all.
+
+Valid `heSolidThermo` type combinations are constrained — for this test the
+working combination is:
+```
+thermoType
+{
+    type            heSolidThermo;
+    mixture         pureMixture;
+    transport       constIso;       // NOT constIsoSolid
+    thermo          hConst;         // NOT eConst
+    equationOfState rhoConst;
+    specie          specie;
+    energy          sensibleEnthalpy;  // NOT sensibleInternalEnergy
+}
+mixture
+{
+    specie { molWeight 1; }
+    thermodynamics { Cp 1; Hf 1; }  // Cp+Hf required for hConst; no Cv/Tref
+    transport { kappa 1; }
+    equationOfState { rho 1; }
+}
+```
+(`FOAM FATAL IO ERROR` on construction prints the list of valid registered
+types if the combination is wrong — use that to iterate.)
+
+### 24.5 `fixedValue`/`fixedEnergy` boundary conditions require `==`, not `=`
+
+`T`'s boundary condition must be `fixedValue` (not `zeroGradient`) for
+`wallHeatFlux` to see a meaningful gradient — `zeroGradientFvPatchField::snGrad()`
+is *hardcoded* to always return zero
+(`src/finiteVolume/fields/fvPatchFields/basic/zeroGradient/zeroGradientFvPatchField.H`),
+regardless of actual field values, and `gradientEnergy` (the `he`-side BC
+substituted for a `T` zeroGradient BC by `basicThermo::heBoundaryTypes()`)
+tracks its own internally-computed `gradient()` rather than reflecting an
+externally-assigned value.
+
+However, plain assignment (`T_ = sumTerm;`) does **not** update `fixedValue`
+(or other "protected" fvPatchField types like `fixedEnergy`) boundary values
+in OpenFOAM — a `=` assignment on a field object leaves fixed-type boundary
+patches untouched. You must use `==` to force the update:
+```cpp
+T_ == sumTerm;   // NOT T_ = sumTerm;
+```
+`mesh().C()` (used to build `sumTerm`) includes both cell centers and
+boundary face centers, so a single field expression correctly supplies both
+interior and boundary (wall) values in one assignment.
+
+### 24.6 Internal energy must use the thermo library's `he(p, T)`, not a hand-rolled formula
+
+For `energy sensibleEnthalpy`, `he() == Hs(p, T) == Cp*(T - Tstd)` (`Tstd`
+defaults to 298.15 K) — **not** `Cp*T`. The `fixedEnergy` boundary condition
+(`Foam::fixedEnergyFvPatchScalarField::updateCoeffs()`) recomputes the
+boundary `he` value from `T`'s boundary value using the library's real
+`thermo.he(pw, Tw, patchi)` formula (i.e. it is self-correcting and includes
+the `Tstd` offset), so if the interior `he` is set using a different,
+inconsistent formula (e.g. plain `Cp*T`), interior and boundary `he` become
+inconsistent with each other, producing a hugely wrong `snGrad(he)` at wall
+patches (in this case, off by several orders of magnitude) even though `T`
+itself was correct everywhere.
+
+**Fix**: always derive `he` from the thermo model's own accessor rather than
+reimplementing the enthalpy/energy formula:
+```cpp
+volScalarField & e = pThermo_->he();
+e == pThermo_->he(pThermo_->p(), T_)();
+```
+
+### 24.7 Summary
+
+With items 24.1–24.6 applied, `transferTestSolver::solve()` becomes:
+```cpp
+void transferTestSolver::solve()
+{
+  dimensionedScalar t(...);
+  const volVectorField& coords = mesh().C();
+  volScalarField xyzTerm = coords.component(0)*coords.component(1)
+    + coords.component(1)*coords.component(2)
+    + coords.component(2)*coords.component(0);
+  volScalarField sumTerm = dimensionedScalar(T_.dimensions(), 0.01) + xyzTerm*t;
+
+  T_ == sumTerm;
+
+  volScalarField& e = pThermo_->he();
+  e == pThermo_->he(pThermo_->p(), T_)();
+
+  pThermo_->correct();
+}
+```
+Both `test_variable_transfer` and `test_wall_heat_flux_transfer` in
+`test/tests/variables/foam_variable/test.py` pass with tight tolerances
+(`rtol=1e-7, atol=1e-12`) after this fix — no test tolerance loosening was
+needed once the underlying solver bugs above were resolved.
