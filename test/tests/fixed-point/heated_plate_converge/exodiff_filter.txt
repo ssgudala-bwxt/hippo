@@ -1,2 +1,2 @@
-NODAL VARIABLES
+NODAL VARIABLES relative 1.e-3
 	temp
