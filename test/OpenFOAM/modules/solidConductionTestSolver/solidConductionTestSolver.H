@@ -25,7 +25,6 @@ class solidConductionTestSolver : public Hippo::HippoSolver
 {
 protected:
   scalar maxDeltaT_;
-  volScalarField T_;
   autoPtr<solidThermo> pThermo_;
   pimpleControl pimple_;
 

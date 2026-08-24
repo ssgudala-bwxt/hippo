@@ -24,18 +24,18 @@ Foam::solvers::solidConductionTestSolver::read()
 Foam::solvers::solidConductionTestSolver::solidConductionTestSolver(fvMesh & mesh)
   : Hippo::HippoSolver(mesh),
     maxDeltaT_(1e15),
-    T_(IOobject("T", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
     pThermo_(solidThermo::New(mesh)),
     pimple_(mesh),
-    T(T_)
+    T(pThermo_->T())
 {
-  // pThermo_ constructs its own T from the registry (same underlying object
-  // as T_ above, since both look up "T"). Since T_ is registered first,
-  // basicThermo::lookupOrConstruct() re-uses it (NO_READ) and sets
-  // TOwner_ = false, so solidThermo::correct() will not overwrite T_ from he
-  // on its own; instead updateT() infers T from he via the solidThermo
-  // model's own T(p, he) inversion each time correct() is called below,
-  // exactly as chtMultiRegionFoam's solid region does after solving hEqn.
+  // Deliberately do NOT pre-register a "T" volScalarField before constructing
+  // pThermo_. basicThermo::lookupOrConstruct() only sets TOwner_ = true (and
+  // thus allows solidThermo::correct() to recompute T from he each call) when
+  // it is the one to construct/register T itself. If T were already
+  // registered (e.g. by this solver, as transferTestSolver deliberately
+  // does), TOwner_ would be false and correct() would silently skip updating
+  // T from he - which is wrong here, since we solve he() directly and rely
+  // on correct() to derive T from it.
   read();
 }
 
