@@ -68,14 +68,17 @@ run_run() {
 
 run_verify() {
   step "verify: compare solid/fluid fields against gold/ and analytical solution"
-  # KNOWN LIMITATION: test_analytical uses a loosened RMSE tolerance (see
-  # test.py) to account for the Crank-Nicolson + fixed-point accuracy loss
-  # documented in FoamDataStore.h's removeOldTime() comment.
+  # KNOWN LIMITATION: all three sub-tests (test_solid_fixed_point,
+  # test_fluid_fixed_point, test_analytical) are expected to fail here due to
+  # the Crank-Nicolson + fixed-point accuracy loss documented in
+  # FoamDataStore.h's removeOldTime() comment. Thresholds are kept at their
+  # original values (not loosened) to make this limitation visible rather
+  # than papered over.
   if python3 -m pytest test.py -v; then
     echo "PASS (verify)"
     PASS=$((PASS + 1))
   else
-    echo "FAILED (verify)"
+    echo "FAILED (verify) [EXPECTED: known Crank-Nicolson + fixed-point limitation, see FoamDataStore.h removeOldTime() comment]"
     FAIL=$((FAIL + 1))
   fi
 }
