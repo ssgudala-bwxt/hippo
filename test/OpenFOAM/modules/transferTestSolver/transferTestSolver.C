@@ -97,10 +97,10 @@ Foam::solvers::transferTestSolver::solve()
   dimensionedScalar base(T_.dimensions(), 0.01);
   volScalarField sumTerm = base + xyzTermT;
 
-  T_ = sumTerm;
+  T_ == sumTerm;
 
   volScalarField & e = pThermo_->he();
-  e = Cp * T_;
+  e == Cp * T_;
 
   pThermo_->correct();
 }
