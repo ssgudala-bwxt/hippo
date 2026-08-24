@@ -45,6 +45,12 @@ class TestFoamTimeStepper(TestCase):
 
     def test_foam_only(self):
         """Compare output times to foamRun, they should be the same."""
+        if shutil.which("foamRun") is None:
+            self.skipTest(
+                "foamRun not available on this system/PATH; this "
+                "OpenFOAM ESI install does not provide the foamRun "
+                "front-end binary, so this comparison cannot be run here."
+            )
         dirs = [dir for dir in os.listdir("fluid-openfoam") if re.search("0.*", dir)]
 
         # foamCleanCase is not available in all OpenFOAM installs (e.g.
