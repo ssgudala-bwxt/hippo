@@ -21,10 +21,16 @@ class TestUnsteadyFixedPointConverge(TestCase):
             # internal data
             T = ff.readof.readscalar(case_dir, time, "T")
             T_ref = ff.readof.readscalar(ref_dir, time, "T")
-            assert np.array_equal(T_ref, T), f"Max diff: {abs(T - T_ref).max()}"
+            # NOTE: gold/ was generated with the original OpenFOAM "solid"
+            # solver, which no longer exists in ESI OpenFOAM. Since the
+            # migration to solidConductionTestSolver, the solution matches to
+            # ~13 significant digits but not bit-for-bit (different linear
+            # solver/algorithm round-off), so use a tight numeric tolerance
+            # instead of exact equality.
+            np.testing.assert_allclose(T, T_ref, rtol=1e-8, atol=1e-8)
 
             # boundary data
             for boundary in boundaries:
                 T = ff.readof.readscalar(case_dir, time, "T", boundary=boundary)
                 T_ref = ff.readof.readscalar(ref_dir, time, "T", boundary=boundary)
-                assert np.array_equal(T_ref, T), f"Max diff: {abs(T - T_ref).max()}"
+                np.testing.assert_allclose(T, T_ref, rtol=1e-8, atol=1e-8)
