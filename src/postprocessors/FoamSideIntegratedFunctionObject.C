@@ -35,15 +35,20 @@ FoamSideIntegratedFunctionObject::createFunctionObject(const std::string & fo_na
   fo_dict.set("patches", patch_names);
   fo_dict.set("writeToFile", false);
 
+  // Use this postprocessor's own (unique) name for the underlying function
+  // object rather than a fixed name. Each function object registers a field
+  // named after itself (e.g. objName) in the mesh's objectRegistry, and
+  // duplicate registrations (e.g. two 'wallHeatFlux' postprocessors in the
+  // same input file) would otherwise fail with "Failed to store pointer".
   if (fo_name == "wallHeatFlux")
   {
     return std::make_unique<Foam::functionObjects::wallHeatFlux>(
-        "wallHeatFlux", _foam_mesh->time(), fo_dict);
+        name(), _foam_mesh->time(), fo_dict);
   }
   else // wallShearStress
   {
     return std::make_unique<Foam::functionObjects::wallShearStress>(
-        "wallShearStress", _foam_mesh->time(), fo_dict);
+        name(), _foam_mesh->time(), fo_dict);
   }
 }
 
