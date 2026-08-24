@@ -66,7 +66,8 @@ Foam::solvers::transferTestSolver::solve()
   // wallHeatFlux) the boundary heat flux to known analytic values for the
   // variable-shadowing/functionObject-shadowing tests.
   volScalarField & e = pThermo_->he();
-  const volScalarField & Cv = pThermo_->Cv();
+  tmp<volScalarField> tCv = pThermo_->Cv();
+  const volScalarField & Cv = tCv();
 
   dimensionedScalar t("t", T_.dimensions() / (dimLength * dimLength), mesh().time().timeOutputValue());
   const volVectorField & coords = mesh().C();
