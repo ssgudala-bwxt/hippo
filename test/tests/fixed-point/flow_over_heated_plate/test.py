@@ -28,14 +28,27 @@ class TestFlowOverHeatedPlate(TestCase):
             # internal data
             temp = ff.readof.readscalar(case_dir, time, "T")
             temp_ref = ff.readof.readscalar(ref_dir, time, "T")
-            assert np.array_equal(temp_ref, temp), (
-                f"Max diff ({time}): {abs(temp - temp_ref).max()}"
+            # NOTE: small (~1e-5 relative) round-off differences are
+            # expected here due to the OpenFOAM/solver stack migration to
+            # ESI OpenFOAM v2606 -- not the Crank-Nicolson + fixed-point
+            # limitation (this test uses Euler time integration). Use a
+            # numeric tolerance instead of exact equality.
+            np.testing.assert_allclose(
+                temp,
+                temp_ref,
+                rtol=1e-4,
+                atol=1e-4,
+                err_msg=f"time = {time}",
             )
 
             # boundary data
             for boundary in boundaries:
                 temp = ff.readof.readscalar(case_dir, time, "T", boundary=boundary)
                 temp_ref = ff.readof.readscalar(ref_dir, time, "T", boundary=boundary)
-                assert np.array_equal(temp_ref, temp), (
-                    f"Max diff ({time}): {abs(temp - temp_ref).max()}"
+                np.testing.assert_allclose(
+                    temp,
+                    temp_ref,
+                    rtol=1e-4,
+                    atol=1e-4,
+                    err_msg=f"time = {time}, boundary = {boundary}",
                 )
