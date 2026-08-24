@@ -18,11 +18,11 @@ thermoType
 {
     type            heSolidThermo;
     mixture         pureMixture;
-    transport       constIsoSolid;
-    thermo          eConst;
+    transport       constIso;
+    thermo          hConst;
     equationOfState rhoConst;
     specie          specie;
-    energy          sensibleInternalEnergy;
+    energy          sensibleEnthalpy;
 }
 
 mixture
@@ -34,7 +34,7 @@ mixture
     }
     thermodynamics
     {
-        Cv              16;        // Specific heat capacity [J/(kg·K)]
+        Cp              16;        // Specific heat capacity [J/(kg·K)]
         Hf              0;         // Heat of formation [J/kg]
     }
     transport
