@@ -1130,3 +1130,120 @@ Both `test_variable_transfer` and `test_wall_heat_flux_transfer` in
 `test/tests/variables/foam_variable/test.py` pass with tight tolerances
 (`rtol=1e-7, atol=1e-12`) after this fix — no test tolerance loosening was
 needed once the underlying solver bugs above were resolved.
+
+## 25. `test/tests/postprocessors/*` — `postprocessorTestSolver`, thermo model, and a `functionObject` field-name collision
+
+`postprocessors/side_average`, `postprocessors/side_integrated_value`, and
+`postprocessors/side_advective_flux_integral` all share the same
+`postprocessorTestSolver` (`test/OpenFOAM/modules/postprocessorTestSolver/`)
+and the same underlying `foam/` case geometry (a 10x1x1 box). Porting them
+to `run_test.sh` surfaced several bugs beyond the ones already described in
+sections 22–24.
+
+### 25.1 `postprocessorTestSolver` needed a `T` field and a `fluidThermo` model
+
+The solver originally only read/held `U` and `rho` — sufficient for
+`FoamSideAdvectiveFluxIntegral`, but not for `FoamSideAverageValue`/
+`FoamSideIntegratedValue` on `T`, nor for the `wallHeatFlux` function object
+(which needs a registered thermo model; see 24.1). Fixed by adding a
+`volScalarField T_` (`MUST_READ`/`AUTO_WRITE`) and an
+`autoPtr<fluidThermo> pThermo_(fluidThermo::New(mesh))` to the solver, plus
+the corresponding `Make/options` include/lib flags:
+```
+-I$(LIB_SRC)/transportModels/compressible/lnInclude
+-I$(LIB_SRC)/thermophysicalModels/basic/lnInclude
+-I$(LIB_SRC)/thermophysicalModels/specie/lnInclude
+...
+-lcompressibleTransportModels -lfluidThermophysicalModels -lspecie
+```
+Note `rhoThermo` is not a separate library — it's compiled into
+`libfluidThermophysicalModels`, so `-lrhoThermo` does not exist and must not
+be added.
+
+### 25.2 Every case's `thermoType` dict needs a `Pr` entry for the `const` transport model
+
+The `const` transport model (`thermoType { transport const; ... }`) requires
+a `Pr` entry in `mixture/transport`, in addition to `kappa`/`mu`. All three
+postprocessor test cases' thermophysical dicts were missing it; fixed by
+adding `Pr 1.;` alongside `kappa`/`mu`.
+
+### 25.3 `constant/physicalProperties` → `constant/thermophysicalProperties` (again)
+
+Same root cause as 24.4: `fluidThermo::dictName` is hardcoded to
+`"thermophysicalProperties"`. All three postprocessor cases' constant
+dictionaries were named `physicalProperties` (a Foundation-era convention)
+and had to be renamed (including their `FoamFile{object=...}` header line)
+so `fluidThermo::New(mesh)` (default dictName) registers them under the key
+that `wallHeatFlux` and any other default consumer actually look up.
+
+### 25.4 `FoamSideIntegratedFunctionObject`/`FoamSideAverageFunctionObject`: duplicate `wallHeatFlux` field registration
+
+`main.i` in `side_average`/`side_integrated_value` defines **two**
+postprocessors (`heat_flux`, `heat_flux_multiple`) that both construct a
+`Foam::functionObjects::wallHeatFlux` function object. Each FO registers a
+result field in the mesh's `objectRegistry` under a name computed from
+`IOobject::scopedName(scope, typeName)`, which is `typeName` itself
+(`"wallHeatFlux"`, a fixed string) unless the FO's `useNamePrefix_` flag is
+set — in which case it becomes `"<scope>:wallHeatFlux"`
+(colon-separated; confirmed in `IOobjectI.H`). Since `createFunctionObject()`
+constructed both FOs under the same fixed field name, the second
+construction failed with `FOAM FATAL ERROR: Failed to store pointer:
+wallHeatFlux` (duplicate registry key).
+
+**Subtlety**: passing `useNamePrefix` in the dictionary given to the FO's
+constructor has **no effect**, because `wallHeatFlux`'s constructor computes
+and registers its result field's name as part of its member-initializer
+list — which runs *before* `read(dict)` is ever invoked (the function that
+would set `useNamePrefix_` from the dict). By the time `read()` runs, the
+field is already registered under the fixed name.
+
+**Fix**: in `FoamSideIntegratedFunctionObject::createFunctionObject()`,
+temporarily flip the process-wide static `Foam::functionObject::
+defaultUseNamePrefix` to `true` around construction of the FO (restoring the
+previous value immediately afterward). This flag *is* read during
+initializer-list-time construction, so it forces a unique
+`"<postprocessor_name>:wallHeatFlux"` field name from the start. The actual
+registered name is saved to a new member, `_field_name = name() + ":" +
+fo_name`, since `_function_object->name()` (the FO's own name) is not the
+same as the name of the field it registered.
+
+`FoamSideIntegratedFunctionObject::compute()` and the
+`FoamSideAverageFunctionObject::compute()` override (which bypassed the
+base class's fix) were both updated to call `integrateValue(_field_name)`
+instead of `integrateValue(_function_object->name())`.
+
+**Declaration-order gotcha**: `_field_name` must be declared *before*
+`_function_object` in `FoamSideIntegratedFunctionObject.h`. C++ initializes
+members in declaration order regardless of constructor initializer-list
+order; `createFunctionObject()` (called to initialize `_function_object`)
+writes into `_field_name`, so if `_field_name` were declared later in the
+class it would still be uninitialized/indeterminate memory at that point.
+This manifested first as a stale/garbage value (`failed lookup of
+heat_flux`), then, after fixing the `compute()` override, as an empty string
+(`failed lookup of` with nothing after it) — both symptoms of writing to a
+not-yet-constructed `std::string`.
+
+### 25.5 `postprocessorTestSolver` must actually drive `T` over time
+
+`side_average`/`side_integrated_value`'s `test.py` expect `t_avg`/`heat_flux`
+postprocessor values that grow linearly with simulation time (e.g. `t_avg ==
+5*time`, `heat_flux == time`), but the solver only read `T` once at start-up
+and never updated it — so these postprocessors were stuck at their initial
+(zero) value every timestep. Comparing against the reference Foundation
+implementation of `postprocessorTestSolver` (`hippo` repo,
+`thermophysicalPredictor()`) showed the intended behavior: set `T = time *
+x` (x = the cell/face x-coordinate) every timestep via the energy equation.
+This was ported into ESI's `postprocessorTestSolver::solve()`, following the
+same `T_ == ...; he = pThermo_->he(p, T_); pThermo_->correct();` pattern
+already established for `transferTestSolver` (section 24). Since the case's
+mesh spans `x ∈ [0, 10]`, this reproduces `t_avg == 5*time` (average of `t*x`
+over the `top` boundary, x from 0 to 10) and `heat_flux == time` (`∂T/∂x =
+time`, driving the wall heat flux) exactly as `test.py` expects.
+
+### 25.6 Summary
+
+With the fixes above, all three `postprocessors/*` tests
+(`side_average`, `side_integrated_value`, `side_advective_flux_integral`)
+pass in both serial and 2-process-parallel modes via their `run_test.sh`
+scripts, which follow the same `all`/`setup`/`run`/`verify_*`/error-case
+mode convention established in `test/tests/bcs/receiver_pp/run_test.sh`.
