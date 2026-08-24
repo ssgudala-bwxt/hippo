@@ -22,7 +22,7 @@ thermoType
     thermo          eConst;
     equationOfState rhoConst;
     specie          specie;
-    energy          sensibleInternalEnergy;
+    energy          sensibleEnthalpy;
 }
 
 mixture
