@@ -22,25 +22,25 @@ boundaryField
 {
     topAndBottom
     {
-        type            alphatJayatillekeWallFunction;
+        type            compressible::alphatJayatillekeWallFunction;
         Prt             0.85;
         value           uniform 0;
     }
     frontAndBack
     {
-        type            alphatJayatillekeWallFunction;
+        type            compressible::alphatJayatillekeWallFunction;
         Prt             0.85;
         value           uniform 0;
     }
     hot
     {
-        type            alphatJayatillekeWallFunction;
+        type            compressible::alphatJayatillekeWallFunction;
         Prt             0.85;
         value           uniform 0;
     }
     cold
     {
-        type            alphatJayatillekeWallFunction;
+        type            compressible::alphatJayatillekeWallFunction;
         Prt             0.85;
         value           uniform 0;
     }
