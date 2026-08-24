@@ -74,20 +74,19 @@ Foam::solvers::transferTestSolver::solve()
   // finds it via NO_READ/re-use and sets TOwner_ = false. That means
   // solidThermo::correct() (heSolidThermo::calculate()) will NOT recompute T
   // from he - it treats T as externally owned/updated (see
-  // basicThermo::updateT()/TOwner_). So we must set T_ directly here rather
-  // than going through he()/Cv()/Cp() and expecting correct() to invert it.
-  // he() is then updated manually (he = Cp*T, since thermoType's energy is
-  // sensibleEnthalpy) so wallHeatFlux (which reads thermo.alpha()/thermo.he())
-  // sees a consistent boundary gradient. correct() is still called afterwards
-  // to refresh rho_/alpha_ from the new T_.
+  // basicThermo::updateT()/TOwner_). So we must set T_ directly here.
+  //
+  // he() must be kept consistent with the thermoType's actual enthalpy
+  // definition (Hs = Cp*(T - Tstd), NOT simply Cp*T) - basicThermo::he(p, T)
+  // computes this consistently, so use it rather than hand-rolling Cp*T
+  // (which disagreed with the Tstd-offset value that fixedEnergy's
+  // updateCoeffs() recomputes at the boundary, causing a large spurious
+  // snGrad(he) mismatch between the interior and boundary values).
   //
   // mesh().C() includes both cell centers (internal field) and face centers
   // (boundary field), so assigning T_/e from an expression built on coords
   // sets correct fixedValue boundary values automatically - no separate
   // boundary-only pass is needed.
-  tmp<volScalarField> tCp = pThermo_->Cp();
-  const volScalarField & Cp = tCp();
-
   dimensionedScalar t("t", T_.dimensions() / (dimLength * dimLength), mesh().time().timeOutputValue());
   const volVectorField & coords = mesh().C();
 
@@ -100,7 +99,7 @@ Foam::solvers::transferTestSolver::solve()
   T_ == sumTerm;
 
   volScalarField & e = pThermo_->he();
-  e == Cp * T_;
+  e == pThermo_->he(pThermo_->p(), T_)();
 
   pThermo_->correct();
 }
