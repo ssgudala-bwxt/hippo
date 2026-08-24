@@ -10,7 +10,6 @@
 
 #include <memory>
 #include <optional>
-#include <iostream>
 
 namespace Foam
 {
@@ -77,18 +76,12 @@ public:
   /// Called by Time::adjustDeltaT() — imposes MOOSE's desired time step.
   virtual bool adjustTimeStep() override
   {
-    std::cerr << "[DEBUG mooseDeltaT::adjustTimeStep] _enabled=" << _enabled
-              << " _old_desired_dt.has_value()=" << _old_desired_dt.has_value()
-              << " _dt=" << _dt << " _time.deltaTValue()=" << _time.deltaTValue()
-              << std::endl;
     if (!_enabled || !_old_desired_dt.has_value())
       return true;
 
     // Adjust deltaTFactor to undo any MOOSE-induced cutback.
     const Foam::scalar factor = calculateDeltaTFactor(_time.deltaTValue());
     Foam::scalar newDeltaT = std::min(factor * _time.deltaTValue(), _dt);
-    std::cerr << "[DEBUG mooseDeltaT::adjustTimeStep] factor=" << factor
-              << " newDeltaT=" << newDeltaT << std::endl;
     _time.setDeltaT(newDeltaT, false);
     return true;
   }

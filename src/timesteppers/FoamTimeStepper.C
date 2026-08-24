@@ -5,8 +5,6 @@
 #include <TimeStepper.h>
 #include <Transient.h>
 
-#include <iostream>
-
 registerMooseObject("hippoApp", FoamTimeStepper);
 
 InputParameters
@@ -53,9 +51,6 @@ FoamTimeStepper::computeDT()
 
   // reenable the function object
   moose_dt.enable();
-
-  std::cerr << "[DEBUG FoamTimeStepper::computeDT] _t_step=" << _t_step
-            << " _desired_dt=" << _desired_dt << std::endl;
 
   return _desired_dt;
 }
