@@ -99,7 +99,15 @@ FoamSolver::run()
   // Adjust the time-step according to the solver maxDeltaT
   adjustDeltaT(time, solver);
   if (_moose_dt)
+  {
+    std::cerr << "[DEBUG FoamSolver::run] pre explicit adjustTimeStep() call, "
+                 "deltaT="
+              << time.deltaTValue() << std::endl;
     _moose_dt->adjustTimeStep();
+    std::cerr << "[DEBUG FoamSolver::run] post explicit adjustTimeStep() call, "
+                 "deltaT="
+              << time.deltaTValue() << std::endl;
+  }
   ++time;
 
   // TODO: replace std::cout with MOOSE output or a dependency-injected stream.
