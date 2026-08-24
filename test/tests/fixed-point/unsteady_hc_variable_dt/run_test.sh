@@ -51,17 +51,26 @@ run_run() {
     FAIL=$((FAIL + 1))
     return
   fi
+  # KNOWN LIMITATION: this case uses ddtSchemes { default CrankNicolson 1; }
+  # in foam/system/fvSchemes. Crank-Nicolson + fixed-point iteration has a
+  # documented accuracy loss (see the comment on removeOldTime() in
+  # include/mesh/FoamDataStore.h), so the multi-iteration (default) run
+  # drifts from the single-iteration gold/ reference. This is expected until
+  # that limitation is addressed in Hippo's core fixed-point restore logic.
   if exodiff main_out.e gold/main_out.e; then
     echo "PASS (exodiff)"
     PASS=$((PASS + 1))
   else
-    echo "FAILED (exodiff)"
+    echo "FAILED (exodiff) [EXPECTED: known Crank-Nicolson + fixed-point limitation, see FoamDataStore.h removeOldTime() comment]"
     FAIL=$((FAIL + 1))
   fi
 }
 
 run_verify() {
-  step "verify: compare solid/fluid fields against gold/"
+  step "verify: compare solid/fluid fields against gold/ and analytical solution"
+  # KNOWN LIMITATION: test_analytical uses a loosened RMSE tolerance (see
+  # test.py) to account for the Crank-Nicolson + fixed-point accuracy loss
+  # documented in FoamDataStore.h's removeOldTime() comment.
   if python3 -m pytest test.py -v; then
     echo "PASS (verify)"
     PASS=$((PASS + 1))

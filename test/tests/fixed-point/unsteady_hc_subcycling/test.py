@@ -47,10 +47,16 @@ class TestUnsteadyHeatConductionInInfiniteSystem(unittest.TestCase):
 
             temp_ref = ff.readof.readscalar("gold", f"{time:g}", "T", verbose=False)
 
-            # NOTE: gold/ was generated with the original OpenFOAM "solid"
-            # solver, which no longer exists in ESI OpenFOAM. Since migrating
-            # to solidConductionTestSolver, results match to ~13 significant
-            # digits but not bit-for-bit (different linear solver/algorithm
-            # round-off), so use a tight numeric tolerance instead of exact
-            # equality.
-            np.testing.assert_allclose(temp, temp_ref, rtol=1e-8, atol=1e-8)
+            # KNOWN LIMITATION: see run_test.sh's run_run() comment - the
+            # Crank-Nicolson + fixed-point + subcycling drift can push T
+            # itself negative/unphysical in the default (multi-iteration)
+            # run, so this comparison against the single-iteration gold/
+            # reference is expected to fail (not roundoff).
+            np.testing.assert_allclose(
+                temp,
+                temp_ref,
+                rtol=1e-8,
+                atol=1e-8,
+                err_msg="EXPECTED: known Crank-Nicolson + fixed-point + subcycling limitation, "
+                "see FoamDataStore.h removeOldTime() comment",
+            )
