@@ -57,12 +57,28 @@ PIMPLE
 
     residualControl
     {
-        p_rgh           1e-4;
-        U               1e-4;
-        h               1e-4;
+        p_rgh
+        {
+            tolerance 1e-4;
+            relTol    0;
+        }
+        U
+        {
+            tolerance 1e-4;
+            relTol    0;
+        }
+        h
+        {
+            tolerance 1e-4;
+            relTol    0;
+        }
 
         // possibly check turbulence fields
-        "(k|epsilon|omega)" 1e-3;
+        "(k|epsilon|omega)"
+        {
+            tolerance 1e-3;
+            relTol    0;
+        }
     }
 }
 
