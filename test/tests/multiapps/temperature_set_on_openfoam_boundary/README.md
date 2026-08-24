@@ -1,7 +1,5 @@
 # Simple MultiApp
 
-CURRENTLY DOES NOT WORK IN HIPPO-ESI
-
 This is a simple multiapp that runs for one time step,
 that checks the initial temperature from a MOOSE mesh's boundary
 is successfully transferred to the OpenFOAM boundary.
