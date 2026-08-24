@@ -41,6 +41,7 @@ mixture
     {
         kappa           1;         // Thermal conductivity [W/(m·K)]
         mu              1.;
+        Pr              1.;
     }
     equationOfState
     {
