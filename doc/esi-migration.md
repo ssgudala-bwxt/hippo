@@ -16,6 +16,41 @@ Reference URLs used during the migration:
 
 ---
 
+## Known bugs / limitations (read this first)
+
+- **Crank-Nicolson temporal scheme causes real (non-roundoff) drift in
+  fixed-point/CN tests.** This is a genuine, documented, pre-existing
+  limitation — not something to "fix" by loosening tolerances. Tests using
+  `ddtSchemes { default CrankNicolson; }` combined with MOOSE fixed-point
+  iteration will also still emit a `mooseWarning` on the first time step
+  (`FoamDataStore.h`'s `removeOldTime()` only clears old times for Euler).
+  See item 13 and the fixed-point test items under 22/26 for details.
+- **`foamCleanCase` and `foamRun` may not be on `PATH`** on a from-source ESI
+  install (only the compiled solver binaries are guaranteed). Any new
+  `run_test.sh`/`test.py` that shells out to these needs a manual-cleanup
+  fallback or a `shutil.which(...)`-guarded skip. See item 26.3.
+- **`mass_flow_rate` test (and anything using the ESI `fluid` solver module
+  directly) is skipped, not failing,** if the user's own ESI `Allwmake`
+  hasn't built `libfluid.so`/`libfluidSolver.so`/etc. This is an install-
+  completeness issue, not a hippo defect. See item 22.3.
+- **`compressible::alphatWallFunction` no longer exists in ESI v2606** for
+  standard (non-boiling) walls — use `compressible::alphatJayatillekeWallFunction`
+  instead, and ensure `libs ("libthermoTools.so");` is in `controlDict` (it's
+  not loaded by `foamRun` by default). See item 26.5.
+- **exodiff does not accept a bare `-relative <tol>` CLI flag** — use a
+  command file (`-f cmdfile`) with `GLOBAL/NODAL/ELEMENT VARIABLES relative
+  <tol>` directives instead. See item 26.2.
+- Small (roundoff-scale) numeric diffs between ESI and Foundation gold files
+  are expected from the underlying OpenFOAM stack migration (different
+  linear-solver iteration counts / floating-point op order) and are safe to
+  fix via loosened tolerances — **but only for non-CrankNicolson tests**;
+  always check `fvSchemes`'s `ddtSchemes` before loosening a tolerance, since
+  CN-related drift should be documented as an expected failure instead (see
+  first bullet above).
+
+---
+
+
 ## 1. `Foam::solver` abstract base class (biggest architectural difference)
 
 ### Foundation behaviour
