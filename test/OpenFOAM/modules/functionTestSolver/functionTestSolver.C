@@ -31,15 +31,6 @@ Foam::solvers::functionTestSolver::functionTestSolver(fvMesh & mesh)
     dTdt(dTdt_),
     kappa(kappa_)
 {
-  // Force creation of T_'s oldTime field ("T_0") up-front. fvc::ddt(T_) in
-  // solve() would otherwise create it lazily on first use, which registers
-  // it in the mesh objectRegistry asymmetrically across fixed-point
-  // iterations (Hippo snapshots/restores all registered fields between
-  // Picard iterations). Without this, a snapshot taken after the first
-  // solve() contains "T_0" while a snapshot taken before it does not,
-  // causing "failed lookup of T_0" when restoring.
-  T_.oldTime();
-
   read();
 }
 

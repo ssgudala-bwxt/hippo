@@ -107,6 +107,25 @@ internalFieldRef(T & field)
 // mesh object registry. Note for some fields, the field.name() and the
 // key are not the same. *strict* indicates whether types derived from T are
 // collected
+// Returns true if the given registry key corresponds to an old-time field
+// (i.e. one lazily created by GeometricField::oldTime()/oldTimeRef() with a
+// name of the form "<baseName>_0", "<baseName>_00", etc.). Note: OpenFOAM
+// ESI's GeometricField does not expose an isOldTime() member function, so
+// this cannot be reliably detected via a member check (has_isOldTime is
+// effectively always false for GeometricField in ESI OpenFOAM) and must
+// instead rely on the naming convention OpenFOAM itself uses internally
+// (see e.g. IOobjectList::prune_0()) of appending "_0" for each level of
+// old time.
+inline bool
+isOldTimeName(const Foam::string & key)
+{
+  auto pos = key.rfind('_');
+  if (pos == Foam::string::npos)
+    return false;
+  const auto suffix = key.substr(pos + 1);
+  return !suffix.empty() && suffix.find_first_not_of('0') == Foam::string::npos;
+}
+
 template <typename T, bool strict>
 inline std::vector<Foam::string>
 getFieldkeys(const Foam::fvMesh & mesh)
@@ -115,7 +134,7 @@ getFieldkeys(const Foam::fvMesh & mesh)
   for (const auto & key : mesh.template names<T>())
   {
     auto & field = mesh.lookupObjectRef<T>(key);
-    bool include = true;
+    bool include = !isOldTimeName(key);
     if constexpr (has_isOldTime<T>::value)
       include = include && !field.isOldTime();
     if constexpr (strict)
