@@ -2,6 +2,7 @@
 
 #include "HippoSolver.h"
 #include "fvCFD.H"
+#include "fluidThermo.H"
 #include "pimpleControl.H"
 
 namespace Foam
@@ -19,6 +20,8 @@ protected:
   scalar maxDeltaT_;
   volVectorField U_;
   volScalarField rho_;
+  volScalarField T_;
+  autoPtr<fluidThermo> pThermo_;
   pimpleControl pimple_;
 
   bool read();

@@ -19,6 +19,8 @@ Foam::solvers::postprocessorTestSolver::postprocessorTestSolver(fvMesh & mesh)
     maxDeltaT_(1e15),
     U_(IOobject("U", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
     rho_(IOobject("rho", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
+    T_(IOobject("T", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
+    pThermo_(fluidThermo::New(mesh)),
     pimple_(mesh)
 {
   read();
