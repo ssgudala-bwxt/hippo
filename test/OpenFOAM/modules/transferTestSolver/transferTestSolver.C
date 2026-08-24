@@ -60,7 +60,14 @@ void
 Foam::solvers::transferTestSolver::solve()
 {
   // Directly impose the analytic profile T = 0.01 + (xy+yz+zx)*t each
-  // timestep (matching test.py's expected T_shadow reference).
+  // timestep (matching test.py's expected T_shadow reference). foam/0/T uses
+  // fixedValue boundary conditions so wallHeatFlux's snGrad(he) at the walls
+  // is computed from an actual value difference (wall value vs adjacent-cell
+  // value) rather than being forced to zero, as it would be with zeroGradient
+  // (see zeroGradientFvPatchField::snGrad(), which is hardcoded to return 0)
+  // or ignoring our directly-assigned value (as gradientEnergy - the he-side
+  // BC basicThermo substitutes for a T zeroGradient BC - does, since it
+  // tracks its own internally-computed gradient() instead).
   //
   // NOTE: T_ is registered in the mesh's objectRegistry by this solver
   // (before pThermo_ is constructed), so basicThermo::lookupOrConstruct()
@@ -73,6 +80,11 @@ Foam::solvers::transferTestSolver::solve()
   // sensibleEnthalpy) so wallHeatFlux (which reads thermo.alpha()/thermo.he())
   // sees a consistent boundary gradient. correct() is still called afterwards
   // to refresh rho_/alpha_ from the new T_.
+  //
+  // mesh().C() includes both cell centers (internal field) and face centers
+  // (boundary field), so assigning T_/e from an expression built on coords
+  // sets correct fixedValue boundary values automatically - no separate
+  // boundary-only pass is needed.
   tmp<volScalarField> tCp = pThermo_->Cp();
   const volScalarField & Cp = tCp();
 

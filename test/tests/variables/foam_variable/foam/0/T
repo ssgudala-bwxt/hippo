@@ -22,27 +22,33 @@ boundaryField
 {
     left
     {
-        type            zeroGradient;
+        type            fixedValue;
+        value           uniform 0.1;
     }
     right
     {
-        type            zeroGradient;
+        type            fixedValue;
+        value           uniform 0.1;
     }
     top
     {
-        type            zeroGradient;
+        type            fixedValue;
+        value           uniform 0.1;
     }
     bottom
     {
-        type            zeroGradient;
+        type            fixedValue;
+        value           uniform 0.1;
     }
     back
     {
-        type            zeroGradient;
+        type            fixedValue;
+        value           uniform 0.1;
     }
     front
     {
-        type            zeroGradient;
+        type            fixedValue;
+        value           uniform 0.1;
     }
 }
 
