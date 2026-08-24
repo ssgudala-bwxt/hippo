@@ -51,11 +51,21 @@ run_run() {
     FAIL=$((FAIL + 1))
     return
   fi
+  # KNOWN LIMITATION: this case uses ddtSchemes { default CrankNicolson 1; }
+  # in foam/system/fvSchemes. Crank-Nicolson + fixed-point iteration has a
+  # documented accuracy loss (see the comment on removeOldTime() in
+  # include/mesh/FoamDataStore.h: "Schemes known not to work: Crank-Nicolson.
+  # Current behaviour does not clear the old time base field for CN even
+  # though this would result in a small error compared to not using
+  # fixed-point."), so the multi-iteration (default) run drifts from the
+  # single-iteration gold/ reference (unlike the Euler-scheme fixed-point
+  # tests, which match almost exactly). This is expected until that
+  # limitation is addressed in Hippo's core fixed-point restore logic.
   if exodiff main_out.e gold/main_out.e; then
     echo "PASS (exodiff)"
     PASS=$((PASS + 1))
   else
-    echo "FAILED (exodiff)"
+    echo "FAILED (exodiff) [EXPECTED: known Crank-Nicolson + fixed-point limitation, see FoamDataStore.h removeOldTime() comment]"
     FAIL=$((FAIL + 1))
   fi
 }

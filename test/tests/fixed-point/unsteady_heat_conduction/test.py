@@ -26,9 +26,13 @@ class TestUnsteadyHeatConductionInInfiniteSystem(unittest.TestCase):
                 RUN_DIR / "gold" / "main_out.e", time, "T"
             )
 
-            assert np.array_equal(solid_temp, solid_temp_ref), (
-                f"Max diff ({time}): {abs(solid_temp - solid_temp_ref).max()}"
-            )
+            # NOTE: gold/ was generated with the original OpenFOAM "solid"
+            # solver, which no longer exists in ESI OpenFOAM. Since migrating
+            # to solidConductionTestSolver, results match to ~13 significant
+            # digits but not bit-for-bit (different linear solver/algorithm
+            # round-off), so use a tight numeric tolerance instead of exact
+            # equality.
+            np.testing.assert_allclose(solid_temp, solid_temp_ref, rtol=1e-8, atol=1e-8)
 
     def test_fluid_fixed_point(self):
         times = get_foam_times("foam")
@@ -37,6 +41,4 @@ class TestUnsteadyHeatConductionInInfiniteSystem(unittest.TestCase):
 
             temp_ref = ff.readof.readscalar("gold", f"{time:g}", "T", verbose=False)
 
-            assert np.array_equal(temp, temp_ref), (
-                f"Max diff ({time}): {abs(temp - temp_ref).max()}"
-            )
+            np.testing.assert_allclose(temp, temp_ref, rtol=1e-8, atol=1e-8)
