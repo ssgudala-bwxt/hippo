@@ -71,11 +71,13 @@ Foam::solvers::transferTestSolver::solve()
   dimensionedScalar t("t", T_.dimensions() / (dimLength * dimLength), mesh().time().timeOutputValue());
   const volVectorField & coords = mesh().C();
 
-  e = Cv
-    * (dimensionedScalar(T_.dimensions(), 0.01)
-       + (coords.component(0) * coords.component(1) + coords.component(1) * coords.component(2)
-          + coords.component(2) * coords.component(0))
-         * t);
+  volScalarField xyzTerm = coords.component(0) * coords.component(1)
+    + coords.component(1) * coords.component(2) + coords.component(2) * coords.component(0);
+  volScalarField xyzTermT = xyzTerm * t;
+  dimensionedScalar base(T_.dimensions(), 0.01);
+  volScalarField sumTerm = base + xyzTermT;
+
+  e = Cv * sumTerm;
 
   pThermo_->correct();
 }
