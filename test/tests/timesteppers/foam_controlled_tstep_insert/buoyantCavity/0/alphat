@@ -24,24 +24,32 @@ boundaryField
     {
         type            compressible::alphatJayatillekeWallFunction;
         Prt             0.85;
+        kappa           0.41;
+        E               9.8;
         value           uniform 0;
     }
     frontAndBack
     {
         type            compressible::alphatJayatillekeWallFunction;
         Prt             0.85;
+        kappa           0.41;
+        E               9.8;
         value           uniform 0;
     }
     hot
     {
         type            compressible::alphatJayatillekeWallFunction;
         Prt             0.85;
+        kappa           0.41;
+        E               9.8;
         value           uniform 0;
     }
     cold
     {
         type            compressible::alphatJayatillekeWallFunction;
         Prt             0.85;
+        kappa           0.41;
+        E               9.8;
         value           uniform 0;
     }
 }
