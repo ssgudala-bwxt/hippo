@@ -59,15 +59,17 @@ Foam::solvers::transferTestSolver::preSolve()
 void
 Foam::solvers::transferTestSolver::solve()
 {
-  // Directly impose the analytic profile e = Cv*(0.01 + (xy+yz+zx)*t) each
+  // Directly impose the analytic profile he = Cp*(0.01 + (xy+yz+zx)*t) each
   // timestep (matching test.py's expected T_shadow reference), then let the
-  // solidThermo model back out T from e via correct(). This intentionally
-  // does not solve a diffusion PDE - it only needs to drive T and (via
+  // solidThermo model back out T from he via correct(). he()/Cp() are used
+  // (rather than an internal-energy/Cv formulation) because thermoType's
+  // energy is sensibleEnthalpy, so he() == h == Cp*T. This intentionally does
+  // not solve a diffusion PDE - it only needs to drive T and (via
   // wallHeatFlux) the boundary heat flux to known analytic values for the
   // variable-shadowing/functionObject-shadowing tests.
   volScalarField & e = pThermo_->he();
-  tmp<volScalarField> tCv = pThermo_->Cv();
-  const volScalarField & Cv = tCv();
+  tmp<volScalarField> tCp = pThermo_->Cp();
+  const volScalarField & Cp = tCp();
 
   dimensionedScalar t("t", T_.dimensions() / (dimLength * dimLength), mesh().time().timeOutputValue());
   const volVectorField & coords = mesh().C();
@@ -78,7 +80,7 @@ Foam::solvers::transferTestSolver::solve()
   dimensionedScalar base(T_.dimensions(), 0.01);
   volScalarField sumTerm = base + xyzTermT;
 
-  e = Cv * sumTerm;
+  e = Cp * sumTerm;
 
   pThermo_->correct();
 }
