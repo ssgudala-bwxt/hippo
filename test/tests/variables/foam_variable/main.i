@@ -17,10 +17,6 @@
         type = FoamVariableField
         foam_variable = 'T'
     []
-    [e_shadow]
-        type = FoamVariableField
-        foam_variable = 'e'
-    []
     [whf_shadow]
         type = FoamFunctionObject
         foam_variable = 'wallHeatFlux'

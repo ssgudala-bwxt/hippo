@@ -3,6 +3,7 @@
 #include "HippoSolver.h"
 #include "fvCFD.H"
 #include "pimpleControl.H"
+#include "solidThermo.H"
 
 namespace Foam
 {
@@ -11,12 +12,17 @@ namespace solvers
 
 // Simplified heat-transfer test solver.  Uses a direct fvScalarMatrix Laplacian
 // on a pre-existing T field instead of solidThermophysicalTransportModel, which
-// is not available in this ESI v2606 system deployment.
+// is not available in this ESI v2606 system deployment. A solidThermo model is
+// still constructed (from constant/thermophysicalProperties) and registered in
+// the mesh object registry so that functionObjects such as wallHeatFlux, which
+// fall back to solidThermo when no turbulence/fluidThermo model is present, can
+// find a valid alpha()/he() to operate on.
 class transferTestSolver : public Hippo::HippoSolver
 {
 protected:
   scalar maxDeltaT_;
   volScalarField T_;
+  autoPtr<solidThermo> pThermo_;
   dimensionedScalar kappa_; // thermal diffusivity [m^2/s]
   pimpleControl pimple_;
 

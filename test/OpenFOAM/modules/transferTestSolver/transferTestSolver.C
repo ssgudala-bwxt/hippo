@@ -32,10 +32,16 @@ Foam::solvers::transferTestSolver::transferTestSolver(fvMesh & mesh)
   : Hippo::HippoSolver(mesh),
     maxDeltaT_(1e15),
     T_(IOobject("T", mesh.time().name(), mesh, IOobject::MUST_READ, IOobject::AUTO_WRITE), mesh),
+    pThermo_(solidThermo::New(mesh)),
     kappa_("kappa", dimViscosity, 1e-5),
     pimple_(mesh),
     T(T_)
 {
+  // pThermo_ is registered in the mesh object registry by solidThermo's own
+  // constructor; it is only used here so that functionObjects (e.g.
+  // wallHeatFlux) can find a valid solidThermo model to compute alpha()/he()
+  // from. This solver itself still integrates T_ directly via a simple
+  // Laplacian, so pThermo_'s internal energy field is not otherwise used.
   read();
 }
 
