@@ -34,33 +34,36 @@ FoamSideIntegratedFunctionObject::createFunctionObject(const std::string & fo_na
 
   fo_dict.set("patches", patch_names);
   fo_dict.set("writeToFile", false);
-  // wallHeatFlux/wallShearStress register their result field under a fixed
-  // name (scopedName(typeName), e.g. "wallHeatFlux") unless useNamePrefix is
-  // enabled, in which case the field is registered as "<name>:<typeName>".
-  // Without this, two postprocessors both using the same function_object
-  // type in one input file collide on the same objectRegistry entry.
-  fo_dict.set("useNamePrefix", true);
 
-  // Use this postprocessor's own (unique) name for the underlying function
-  // object rather than a fixed name. Each function object registers a field
-  // named after itself (e.g. objName) in the mesh's objectRegistry, and
-  // duplicate registrations (e.g. two 'wallHeatFlux' postprocessors in the
-  // same input file) would otherwise fail with "Failed to store pointer".
+  // wallHeatFlux/wallShearStress register their result field in the
+  // objectRegistry under the fixed name scopedName(typeName), e.g.
+  // "wallHeatFlux" -- this scoped name is computed once, in the FO
+  // constructor's initializer list, *before* read(dict) runs, so setting
+  // "useNamePrefix" in the dict has no effect at construction time.
+  // Instead, temporarily flip the process-wide default so the FO computes a
+  // unique "<name>:<typeName>" registry entry from the start. Without this,
+  // two postprocessors using the same function_object type in one input
+  // file would collide on the same fixed objectRegistry entry.
+  const bool old_default_use_name_prefix = Foam::functionObject::defaultUseNamePrefix;
+  Foam::functionObject::defaultUseNamePrefix = true;
+
+  std::unique_ptr<Foam::functionObject> fo;
   if (fo_name == "wallHeatFlux")
-  {
-    return std::make_unique<Foam::functionObjects::wallHeatFlux>(
-        name(), _foam_mesh->time(), fo_dict);
-  }
+    fo = std::make_unique<Foam::functionObjects::wallHeatFlux>(name(), _foam_mesh->time(), fo_dict);
   else // wallShearStress
-  {
-    return std::make_unique<Foam::functionObjects::wallShearStress>(
+    fo = std::make_unique<Foam::functionObjects::wallShearStress>(
         name(), _foam_mesh->time(), fo_dict);
-  }
+
+  Foam::functionObject::defaultUseNamePrefix = old_default_use_name_prefix;
+
+  _field_name = name() + ":" + fo_name;
+
+  return fo;
 }
 
 void
 FoamSideIntegratedFunctionObject::compute()
 {
   _function_object->execute();
-  _value = integrateValue(_function_object->name());
+  _value = integrateValue(_field_name);
 }
