@@ -363,6 +363,23 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
   readField(stream, field);
 
   // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+  // Unconditional (no has_oldTimeRef gate) so it cannot be silently compiled
+  // out - confirms exactly which field names are actually restored, and what
+  // value they hold immediately after readField() overwrites them.
+  if constexpr (std::is_same_v<T, Foam::volScalarField>)
+  {
+    if (field_name == "T")
+    {
+      mooseInfoRepeated(
+          "[CN-T-LOAD-INNER] field_name=" + field_name +
+          " meshTimeIndex=" + std::to_string(foam_mesh.time().timeIndex()) +
+          " postReadField.mag[0]=" +
+          std::to_string(Foam::mag(field.primitiveField()[0])) +
+          " nOldTimes=" + std::to_string(nOldTimes));
+    }
+  }
+
+  // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
   if constexpr (has_oldTimeRef<T>::value)
   {
     if (field_name == "T")
