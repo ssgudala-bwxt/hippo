@@ -51,6 +51,25 @@ Foam::solvers::odeTestSolver::solve()
   {
     while (pimple_.correctNonOrthogonal())
     {
+      // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+      // Read-only lookups (not T_.oldTime()) to avoid triggering
+      // storeOldTimes() as a side effect of the debug print itself.
+      {
+        std::string msg = "[CN-PRE-ASSEMBLY] meshTimeIndex=" +
+                           std::to_string(mesh().time().timeIndex()) +
+                           " T.mag[0]=" + std::to_string(Foam::mag(T_.primitiveField()[0]));
+        if (mesh().foundObject<volScalarField>("T_0"))
+        {
+          const auto & T0 = mesh().lookupObject<volScalarField>("T_0");
+          msg += " T_0.mag[0]=" + std::to_string(Foam::mag(T0.primitiveField()[0]));
+        }
+        if (mesh().foundObject<volScalarField>("T_0_0"))
+        {
+          const auto & T00 = mesh().lookupObject<volScalarField>("T_0_0");
+          msg += " T_0_0.mag[0]=" + std::to_string(Foam::mag(T00.primitiveField()[0]));
+        }
+        Info << msg << endl;
+      }
       dimensionedScalar C("C", dimensionSet(0, 0, -1, 1, 0),
                           1000.0 * mesh().time().value());
       fvScalarMatrix TEqn(fvm::ddt(T_) - C);
