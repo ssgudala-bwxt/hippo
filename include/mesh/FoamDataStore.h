@@ -433,6 +433,29 @@ storeFields(std::ostream & stream, const Foam::fvMesh & mesh, std::set<std::stri
   {
     auto & field = mesh.lookupObjectRef<T>(key);
 
+    // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+    // Printed directly in this scope (not dataStoreField) so it cannot be
+    // silently compiled out by any has_oldTimeRef<T> constexpr gate. Looks up
+    // "T_0" via the registry directly (rather than calling field.oldTime(),
+    // whose non-const overload can trigger storeOldTimes() as a side effect
+    // and perturb the very state being debugged).
+    if constexpr (std::is_same_v<T, Foam::volScalarField>)
+    {
+      if (key == "T")
+      {
+        std::string msg =
+            "[CN-T-STORE-RAW] meshTimeIndex=" +
+            std::to_string(field.mesh().time().timeIndex()) +
+            " mag[0]=" + std::to_string(Foam::mag(field.primitiveField()[0]));
+        if (mesh.foundObject<T>("T_0"))
+        {
+          auto & fieldOld = mesh.lookupObject<T>("T_0");
+          msg += " T_0.mag[0]=" + std::to_string(Foam::mag(fieldOld.primitiveField()[0]));
+        }
+        mooseInfoRepeated(msg);
+      }
+    }
+
     dataStoreField<T>(stream, key, field, field_list);
   }
 }
@@ -494,6 +517,29 @@ loadFields(std::istream & stream, Foam::fvMesh & mesh)
   for (int i = 0; i < nFields; ++i)
   {
     dataLoadField<T>(stream, mesh);
+  }
+
+  // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+  // Printed here (outside dataLoadField) so it cannot be silently compiled out
+  // by any has_oldTimeRef<T> constexpr gate. Looks up "T"/"T_0" directly via
+  // the registry rather than field.oldTime(), whose non-const overload can
+  // trigger storeOldTimes() as a side effect and perturb the state being
+  // debugged.
+  if constexpr (std::is_same_v<T, Foam::volScalarField>)
+  {
+    if (mesh.foundObject<T>("T"))
+    {
+      auto & field = mesh.lookupObject<T>("T");
+      std::string msg =
+          "[CN-T-LOAD-RAW] meshTimeIndex=" + std::to_string(mesh.time().timeIndex()) +
+          " mag[0]=" + std::to_string(Foam::mag(field.primitiveField()[0]));
+      if (mesh.foundObject<T>("T_0"))
+      {
+        auto & fieldOld = mesh.lookupObject<T>("T_0");
+        msg += " T_0.mag[0]=" + std::to_string(Foam::mag(fieldOld.primitiveField()[0]));
+      }
+      mooseInfoRepeated(msg);
+    }
   }
 
   const auto cur_fields{getFieldkeys<T, false>(mesh)};
