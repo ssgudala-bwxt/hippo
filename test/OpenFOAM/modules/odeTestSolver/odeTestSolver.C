@@ -3,6 +3,7 @@
 #include "fvMatrices.H"
 #include "fvmDdt.H"
 #include "scalar.H"
+#include <string>
 
 extern "C" Hippo::HippoSolver *
 hippo_solver_factory_odeTestSolver(Foam::fvMesh & mesh)
@@ -53,7 +54,26 @@ Foam::solvers::odeTestSolver::solve()
       dimensionedScalar C("C", dimensionSet(0, 0, -1, 1, 0),
                           1000.0 * mesh().time().value());
       fvScalarMatrix TEqn(fvm::ddt(T_) - C);
+      // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+      {
+        std::string msg = "[CN-ASSEMBLY] meshTimeIndex=" +
+                           std::to_string(mesh().time().timeIndex()) +
+                           " time=" + std::to_string(mesh().time().value()) +
+                           " C=" + std::to_string(1000.0 * mesh().time().value()) +
+                           " T.mag[0]=" + std::to_string(Foam::mag(T_.primitiveField()[0])) +
+                           " T.timeIndex=" + std::to_string(T_.timeIndex());
+        if (mesh().foundObject<volScalarField>("ddt0(T)"))
+        {
+          const auto & ddt0T = mesh().lookupObject<volScalarField>("ddt0(T)");
+          msg += " ddt0(T).mag[0]=" + std::to_string(Foam::mag(ddt0T.primitiveField()[0])) +
+                 " ddt0(T).timeIndex=" + std::to_string(ddt0T.timeIndex());
+        }
+        Info << msg << endl;
+      }
       TEqn.solve();
+      // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+      Info << "[CN-POSTSOLVE] meshTimeIndex=" << mesh().time().timeIndex()
+           << " T.mag[0]=" << Foam::mag(T_.primitiveField()[0]) << endl;
     }
   }
 }
