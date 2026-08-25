@@ -421,6 +421,14 @@ storeFields(std::ostream & stream, const Foam::fvMesh & mesh, std::set<std::stri
   auto nFields{static_cast<int>(cur_fields.size())};
 
   storeHelper(stream, nFields, nullptr);
+  // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+  if constexpr (std::is_same_v<T, Foam::volScalarField>)
+  {
+    std::string keys;
+    for (auto & key : cur_fields)
+      keys += std::string(key) + ",";
+    mooseInfoRepeated("[CN-KEYS-STORE] volScalarField keys=" + keys);
+  }
   for (auto & key : cur_fields)
   {
     auto & field = mesh.lookupObjectRef<T>(key);
