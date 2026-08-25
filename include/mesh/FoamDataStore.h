@@ -285,6 +285,18 @@ dataStoreField(std::ostream & stream,
   storeHelper(stream, field_name, nullptr);
   writeField(stream, field);
 
+  // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+  if constexpr (has_oldTimeRef<T>::value)
+  {
+    if (name == "T")
+    {
+      mooseInfoRepeated(
+          "[CN-T-STORE] name=" + name + " current" +
+          " meshTimeIndex=" + std::to_string(field.mesh().time().timeIndex()) +
+          " mag[0]=" + std::to_string(Foam::mag(field.primitiveField()[0])));
+    }
+  }
+
   // CrankNicolsonDdtScheme's "ddt0(...)" auxiliary fields track whether they
   // have already been advanced for the current Foam::Time::timeIndex() via
   // their own timeIndex(). Restoring only the field values on a fixed-point
@@ -300,9 +312,14 @@ dataStoreField(std::ostream & stream,
       Foam::label ddt0TimeIndex{field.timeIndex()};
       storeHelper(stream, ddt0TimeIndex, nullptr);
       // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+      // Foam::mag() is used (instead of std::to_string on the raw value) because
+      // it is defined uniformly for every GeometricField value type (scalar,
+      // vector, tensor, symmTensor, ...), so this stays type-safe regardless of
+      // which field instantiation is being stored.
       mooseInfoRepeated("[CN-DDT0-STORE] name=" + name +
                          " meshTimeIndex=" + std::to_string(field.mesh().time().timeIndex()) +
-                         " ddt0.timeIndex=" + std::to_string(ddt0TimeIndex));
+                         " ddt0.timeIndex=" + std::to_string(ddt0TimeIndex) +
+                         " ddt0.mag[0]=" + std::to_string(Foam::mag(field.primitiveField()[0])));
     }
   }
 
@@ -313,6 +330,20 @@ dataStoreField(std::ostream & stream,
     {
       writeField(stream, field.oldTime(n));
       field_list.insert(field.oldTime(n).name());
+      // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+      // Narrowed to "T" specifically so it only fires for the ode_crank_nicolson
+      // test's solved variable, and guarded on has_oldTimeRef so it only ever
+      // instantiates for GeometricField-like types with a primitiveField().
+      if constexpr (has_oldTimeRef<T>::value)
+      {
+        if (name == "T")
+        {
+          mooseInfoRepeated(
+              "[CN-T-STORE] name=" + name + " oldTime(" + std::to_string(n) + ")" +
+              " meshTimeIndex=" + std::to_string(field.mesh().time().timeIndex()) +
+              " mag[0]=" + std::to_string(Foam::mag(field.oldTime(n).primitiveField()[0])));
+        }
+      }
     }
   }
 }
@@ -331,6 +362,18 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
   auto & field = foam_mesh.lookupObjectRef<T>(field_name);
   readField(stream, field);
 
+  // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+  if constexpr (has_oldTimeRef<T>::value)
+  {
+    if (field_name == "T")
+    {
+      mooseInfoRepeated(
+          "[CN-T-LOAD] name=" + field_name + " current" +
+          " meshTimeIndex=" + std::to_string(foam_mesh.time().timeIndex()) +
+          " mag[0]=" + std::to_string(Foam::mag(field.primitiveField()[0])));
+    }
+  }
+
   // Restore the ddt0(...) timeIndex() written by dataStoreField, in the same
   // order it was written, so CrankNicolsonDdtScheme::evaluate() recomputes
   // ddt0 on the next access after this restore rather than reusing stale
@@ -346,7 +389,8 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
       mooseInfoRepeated(
           "[CN-DDT0-LOAD] name=" + field_name +
           " meshTimeIndex=" + std::to_string(foam_mesh.time().timeIndex()) +
-          " ddt0.timeIndex=" + std::to_string(field.timeIndex()));
+          " ddt0.timeIndex=" + std::to_string(field.timeIndex()) +
+          " ddt0.mag[0]=" + std::to_string(Foam::mag(field.primitiveField()[0])));
     }
   }
 
@@ -356,6 +400,14 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
     {
       auto & old_field = field.oldTimeRef(nOld);
       readField(stream, old_field);
+      // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+      if (field_name == "T")
+      {
+        mooseInfoRepeated(
+            "[CN-T-LOAD] name=" + field_name + " oldTime(" + std::to_string(nOld) + ")" +
+            " meshTimeIndex=" + std::to_string(foam_mesh.time().timeIndex()) +
+            " mag[0]=" + std::to_string(Foam::mag(old_field.primitiveField()[0])));
+      }
     }
   }
 }
