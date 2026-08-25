@@ -62,11 +62,15 @@ struct has_clearOldTimes<T, std::void_t<decltype(std::declval<T &>().clearOldTim
 };
 
 // Detects GeometricField's non-const timeIndex() accessor (returns Foam::label&).
-// This is the field's own bookkeeping index used e.g. by GeometricField::storeOldTimes()
-// to decide whether to auto-shift its old-time chain, and separately (for CrankNicolson's
-// "ddt0(...)" auxiliary fields specifically) by CrankNicolsonDdtScheme::evaluate() to decide
-// whether ddt0 needs to be recomputed for the current Foam::Time::timeIndex(). See
-// removeOldTime() and isDDt0Name() below for why this is only round-tripped for ddt0 fields.
+// Every GeometricField (not just CrankNicolson's "ddt0(...)" auxiliary fields) carries
+// this bookkeeping index; GeometricField::storeOldTimes() (called from internalFieldRef(),
+// primitiveFieldRef(), oldTime(), correctBoundaryConditions(), ...) only shifts a field's
+// old-time chain when this index differs from Foam::Time::timeIndex(). If a fixed-point
+// restore resets a field's *values* but leaves this index stale, the field can silently
+// skip (or spuriously repeat) an old-time shift on the next access after restore - the
+// same mechanism CrankNicolsonDdtScheme::evaluate() separately relies on for its own
+// "ddt0(...)" fields. So this must be round-tripped for every field that has it, not just
+// ddt0(...) ones. See dataStoreField()/dataLoadField() below.
 template <typename T, typename = void>
 struct has_timeIndex : std::false_type
 {
@@ -285,42 +289,19 @@ dataStoreField(std::ostream & stream,
   storeHelper(stream, field_name, nullptr);
   writeField(stream, field);
 
-  // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
-  if constexpr (has_oldTimeRef<T>::value)
-  {
-    if (name == "T")
-    {
-      mooseInfoRepeated(
-          "[CN-T-STORE] name=" + name + " current" +
-          " meshTimeIndex=" + std::to_string(field.mesh().time().timeIndex()) +
-          " mag[0]=" + std::to_string(Foam::mag(field.primitiveField()[0])));
-    }
-  }
-
-  // CrankNicolsonDdtScheme's "ddt0(...)" auxiliary fields track whether they
-  // have already been advanced for the current Foam::Time::timeIndex() via
-  // their own timeIndex(). Restoring only the field values on a fixed-point
-  // re-solve (without restoring this index) leaves it referring to the
-  // now-current timeIndex(), so CrankNicolsonDdtScheme::evaluate() sees no
-  // change and skips recomputing ddt0, silently reusing stale scheme state
-  // across fixed-point iterations. Store it here, alongside the values, so
-  // dataLoadField can put it back. See isDDt0Name()/has_timeIndex above.
+  // Every GeometricField carries its own timeIndex() bookkeeping (see has_timeIndex
+  // above), used by GeometricField::storeOldTimes() to decide whether to auto-shift its
+  // old-time chain, and - for CrankNicolsonDdtScheme's "ddt0(...)" auxiliary fields
+  // specifically - by CrankNicolsonDdtScheme::evaluate() to decide whether ddt0 needs to
+  // be recomputed. Restoring only a field's values on a fixed-point re-solve, without also
+  // restoring this index, leaves it referring to the now-current Foam::Time::timeIndex(),
+  // so the field's next access after restore either skips a needed old-time shift or
+  // performs a spurious one, corrupting the old-time chain (e.g. T_0) and/or leaving CN's
+  // ddt0 stale. Store it here, alongside the values, so dataLoadField can put it back.
   if constexpr (has_timeIndex<T>::value)
   {
-    if (isDDt0Name(name))
-    {
-      Foam::label ddt0TimeIndex{field.timeIndex()};
-      storeHelper(stream, ddt0TimeIndex, nullptr);
-      // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
-      // Foam::mag() is used (instead of std::to_string on the raw value) because
-      // it is defined uniformly for every GeometricField value type (scalar,
-      // vector, tensor, symmTensor, ...), so this stays type-safe regardless of
-      // which field instantiation is being stored.
-      mooseInfoRepeated("[CN-DDT0-STORE] name=" + name +
-                         " meshTimeIndex=" + std::to_string(field.mesh().time().timeIndex()) +
-                         " ddt0.timeIndex=" + std::to_string(ddt0TimeIndex) +
-                         " ddt0.mag[0]=" + std::to_string(Foam::mag(field.primitiveField()[0])));
-    }
+    Foam::label fieldTimeIndex{field.timeIndex()};
+    storeHelper(stream, fieldTimeIndex, nullptr);
   }
 
   field_list.insert(name);
@@ -330,20 +311,6 @@ dataStoreField(std::ostream & stream,
     {
       writeField(stream, field.oldTime(n));
       field_list.insert(field.oldTime(n).name());
-      // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
-      // Narrowed to "T" specifically so it only fires for the ode_crank_nicolson
-      // test's solved variable, and guarded on has_oldTimeRef so it only ever
-      // instantiates for GeometricField-like types with a primitiveField().
-      if constexpr (has_oldTimeRef<T>::value)
-      {
-        if (name == "T")
-        {
-          mooseInfoRepeated(
-              "[CN-T-STORE] name=" + name + " oldTime(" + std::to_string(n) + ")" +
-              " meshTimeIndex=" + std::to_string(field.mesh().time().timeIndex()) +
-              " mag[0]=" + std::to_string(Foam::mag(field.oldTime(n).primitiveField()[0])));
-        }
-      }
     }
   }
 }
@@ -362,53 +329,19 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
   auto & field = foam_mesh.lookupObjectRef<T>(field_name);
   readField(stream, field);
 
-  // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
-  // Unconditional (no has_oldTimeRef gate) so it cannot be silently compiled
-  // out - confirms exactly which field names are actually restored, and what
-  // value they hold immediately after readField() overwrites them.
-  if constexpr (std::is_same_v<T, Foam::volScalarField>)
-  {
-    if (field_name == "T")
-    {
-      mooseInfoRepeated(
-          "[CN-T-LOAD-INNER] field_name=" + field_name +
-          " meshTimeIndex=" + std::to_string(foam_mesh.time().timeIndex()) +
-          " postReadField.mag[0]=" +
-          std::to_string(Foam::mag(field.primitiveField()[0])) +
-          " nOldTimes=" + std::to_string(nOldTimes));
-    }
-  }
-
-  // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
-  if constexpr (has_oldTimeRef<T>::value)
-  {
-    if (field_name == "T")
-    {
-      mooseInfoRepeated(
-          "[CN-T-LOAD] name=" + field_name + " current" +
-          " meshTimeIndex=" + std::to_string(foam_mesh.time().timeIndex()) +
-          " mag[0]=" + std::to_string(Foam::mag(field.primitiveField()[0])));
-    }
-  }
-
-  // Restore the ddt0(...) timeIndex() written by dataStoreField, in the same
-  // order it was written, so CrankNicolsonDdtScheme::evaluate() recomputes
-  // ddt0 on the next access after this restore rather than reusing stale
-  // scheme state. See isDDt0Name()/has_timeIndex above.
+  // Restore the timeIndex() written by dataStoreField, in the same order it was written,
+  // for every field that has one - not just CrankNicolson's "ddt0(...)" auxiliary fields.
+  // Without this, a field's own timeIndex() bookkeeping is left referring to the
+  // now-current Foam::Time::timeIndex() after a fixed-point restore, so its next access
+  // (e.g. via internalFieldRef()/oldTime()) either skips a needed old-time shift or
+  // performs a spurious one - corrupting the old-time chain - and for ddt0(...) fields
+  // specifically leaves CrankNicolsonDdtScheme::evaluate() reusing stale scheme state.
+  // See has_timeIndex above.
   if constexpr (has_timeIndex<T>::value)
   {
-    if (isDDt0Name(field_name))
-    {
-      Foam::label ddt0TimeIndex;
-      loadHelper(stream, ddt0TimeIndex, nullptr);
-      field.timeIndex() = ddt0TimeIndex;
-      // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
-      mooseInfoRepeated(
-          "[CN-DDT0-LOAD] name=" + field_name +
-          " meshTimeIndex=" + std::to_string(foam_mesh.time().timeIndex()) +
-          " ddt0.timeIndex=" + std::to_string(field.timeIndex()) +
-          " ddt0.mag[0]=" + std::to_string(Foam::mag(field.primitiveField()[0])));
-    }
+    Foam::label fieldTimeIndex;
+    loadHelper(stream, fieldTimeIndex, nullptr);
+    field.timeIndex() = fieldTimeIndex;
   }
 
   if constexpr (has_oldTimeRef<T>::value)
@@ -417,14 +350,6 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
     {
       auto & old_field = field.oldTimeRef(nOld);
       readField(stream, old_field);
-      // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
-      if (field_name == "T")
-      {
-        mooseInfoRepeated(
-            "[CN-T-LOAD] name=" + field_name + " oldTime(" + std::to_string(nOld) + ")" +
-            " meshTimeIndex=" + std::to_string(foam_mesh.time().timeIndex()) +
-            " mag[0]=" + std::to_string(Foam::mag(old_field.primitiveField()[0])));
-      }
     }
   }
 }
@@ -438,41 +363,9 @@ storeFields(std::ostream & stream, const Foam::fvMesh & mesh, std::set<std::stri
   auto nFields{static_cast<int>(cur_fields.size())};
 
   storeHelper(stream, nFields, nullptr);
-  // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
-  if constexpr (std::is_same_v<T, Foam::volScalarField>)
-  {
-    std::string keys;
-    for (auto & key : cur_fields)
-      keys += std::string(key) + ",";
-    mooseInfoRepeated("[CN-KEYS-STORE] volScalarField keys=" + keys);
-  }
   for (auto & key : cur_fields)
   {
     auto & field = mesh.lookupObjectRef<T>(key);
-
-    // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
-    // Printed directly in this scope (not dataStoreField) so it cannot be
-    // silently compiled out by any has_oldTimeRef<T> constexpr gate. Looks up
-    // "T_0" via the registry directly (rather than calling field.oldTime(),
-    // whose non-const overload can trigger storeOldTimes() as a side effect
-    // and perturb the very state being debugged).
-    if constexpr (std::is_same_v<T, Foam::volScalarField>)
-    {
-      if (key == "T")
-      {
-        std::string msg =
-            "[CN-T-STORE-RAW] meshTimeIndex=" +
-            std::to_string(field.mesh().time().timeIndex()) +
-            " mag[0]=" + std::to_string(Foam::mag(field.primitiveField()[0]));
-        if (mesh.foundObject<T>("T_0"))
-        {
-          auto & fieldOld = mesh.lookupObject<T>("T_0");
-          msg += " T_0.mag[0]=" + std::to_string(Foam::mag(fieldOld.primitiveField()[0]));
-        }
-        mooseInfoRepeated(msg);
-      }
-    }
-
     dataStoreField<T>(stream, key, field, field_list);
   }
 }
@@ -510,12 +403,12 @@ removeOldTime(Foam::fvMesh & mesh, T & field)
   //
   // Schemes known to work:
   //   - Euler (implicit)
-  // Schemes known not to work
   //   - Crank-Nicolson
-  // Current behaviour: do not clear the old time base field for ddt0(...) fields. The
-  // ddt0(...) field's own scheme state (its timeIndex()) is instead round-tripped through
-  // dataStoreField/dataLoadField so that CrankNicolsonDdtScheme::evaluate() correctly
-  // recomputes ddt0 on each fixed-point iteration rather than reusing stale state.
+  // Current behaviour: do not clear the old time base field for ddt0(...) fields. Every
+  // field's own scheme state (its timeIndex()) is instead round-tripped through
+  // dataStoreField/dataLoadField (see has_timeIndex above) so that
+  // GeometricField::storeOldTimes() and CrankNicolsonDdtScheme::evaluate() both correctly
+  // recompute their state on each fixed-point iteration rather than reusing stale state.
   if constexpr (has_clearOldTimes<T>::value)
   {
     if (!isDDt0Name(field.name()))
@@ -534,29 +427,6 @@ loadFields(std::istream & stream, Foam::fvMesh & mesh)
   for (int i = 0; i < nFields; ++i)
   {
     dataLoadField<T>(stream, mesh);
-  }
-
-  // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
-  // Printed here (outside dataLoadField) so it cannot be silently compiled out
-  // by any has_oldTimeRef<T> constexpr gate. Looks up "T"/"T_0" directly via
-  // the registry rather than field.oldTime(), whose non-const overload can
-  // trigger storeOldTimes() as a side effect and perturb the state being
-  // debugged.
-  if constexpr (std::is_same_v<T, Foam::volScalarField>)
-  {
-    if (mesh.foundObject<T>("T"))
-    {
-      auto & field = mesh.lookupObject<T>("T");
-      std::string msg =
-          "[CN-T-LOAD-RAW] meshTimeIndex=" + std::to_string(mesh.time().timeIndex()) +
-          " mag[0]=" + std::to_string(Foam::mag(field.primitiveField()[0]));
-      if (mesh.foundObject<T>("T_0"))
-      {
-        auto & fieldOld = mesh.lookupObject<T>("T_0");
-        msg += " T_0.mag[0]=" + std::to_string(Foam::mag(fieldOld.primitiveField()[0]));
-      }
-      mooseInfoRepeated(msg);
-    }
   }
 
   const auto cur_fields{getFieldkeys<T, false>(mesh)};
