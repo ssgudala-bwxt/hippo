@@ -287,22 +287,26 @@ dataStoreField(std::ostream & stream,
 
   std::string field_name{name};
   storeHelper(stream, field_name, nullptr);
-  writeField(stream, field);
 
   // Every GeometricField carries its own timeIndex() bookkeeping (see has_timeIndex
-  // above), used by GeometricField::storeOldTimes() to decide whether to auto-shift its
-  // old-time chain, and - for CrankNicolsonDdtScheme's "ddt0(...)" auxiliary fields
-  // specifically - by CrankNicolsonDdtScheme::evaluate() to decide whether ddt0 needs to
-  // be recomputed. Restoring only a field's values on a fixed-point re-solve, without also
-  // restoring this index, leaves it referring to the now-current Foam::Time::timeIndex(),
-  // so the field's next access after restore either skips a needed old-time shift or
-  // performs a spurious one, corrupting the old-time chain (e.g. T_0) and/or leaving CN's
-  // ddt0 stale. Store it here, alongside the values, so dataLoadField can put it back.
+  // above), used by GeometricField::storeOldTimes() (called from internalFieldRef(),
+  // primitiveFieldRef(), oldTime(), ...) to decide whether to auto-shift its old-time
+  // chain, and - for CrankNicolsonDdtScheme's "ddt0(...)" auxiliary fields specifically -
+  // by CrankNicolsonDdtScheme::evaluate() to decide whether ddt0 needs to be recomputed.
+  // Written here, before the field's own values, so dataLoadField can restore it before
+  // calling readField(): readField() writes the field's values via a non-const accessor
+  // (e.g. primitiveFieldRef()) that itself triggers storeOldTimes() as a side effect, and
+  // if timeIndex() is still stale (referring to a later real timeIndex than the
+  // just-restored Foam::Time) at that moment, this spuriously shifts the *pre-restore*
+  // value into the old-time chain (e.g. T_0) before we ever get to overwrite it -
+  // corrupting T_0/T_0_0 even though the field's own current value ends up correct.
   if constexpr (has_timeIndex<T>::value)
   {
     Foam::label fieldTimeIndex{field.timeIndex()};
     storeHelper(stream, fieldTimeIndex, nullptr);
   }
+
+  writeField(stream, field);
 
   field_list.insert(name);
   if constexpr (has_nOldTimes<T>::value && has_oldTime<T>::value)
@@ -327,22 +331,26 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
   std::string field_name;
   loadHelper(stream, field_name, nullptr);
   auto & field = foam_mesh.lookupObjectRef<T>(field_name);
-  readField(stream, field);
 
-  // Restore the timeIndex() written by dataStoreField, in the same order it was written,
-  // for every field that has one - not just CrankNicolson's "ddt0(...)" auxiliary fields.
-  // Without this, a field's own timeIndex() bookkeeping is left referring to the
-  // now-current Foam::Time::timeIndex() after a fixed-point restore, so its next access
-  // (e.g. via internalFieldRef()/oldTime()) either skips a needed old-time shift or
-  // performs a spurious one - corrupting the old-time chain - and for ddt0(...) fields
-  // specifically leaves CrankNicolsonDdtScheme::evaluate() reusing stale scheme state.
-  // See has_timeIndex above.
+  // Restore the timeIndex() written by dataStoreField (in the same order it was written)
+  // BEFORE touching the field's value at all - not just for CrankNicolson's "ddt0(...)"
+  // auxiliary fields, but for every field that has one. readField() below writes the
+  // field's values via a non-const accessor (e.g. primitiveFieldRef()) that itself calls
+  // GeometricField::storeOldTimes() as a side effect before the write; if timeIndex() is
+  // still stale at that point (referring to a later real timeIndex than the just-restored
+  // Foam::Time::timeIndex()), that side effect spuriously shifts the *pre-restore* value
+  // into the old-time chain (e.g. T_0/T_0_0) before we ever overwrite it - corrupting the
+  // old-time chain even though the field's own current value ends up correct. Restoring
+  // timeIndex() first makes it match Foam::Time::timeIndex() before any such access, so
+  // this spurious shift cannot happen. See has_timeIndex above.
   if constexpr (has_timeIndex<T>::value)
   {
     Foam::label fieldTimeIndex;
     loadHelper(stream, fieldTimeIndex, nullptr);
     field.timeIndex() = fieldTimeIndex;
   }
+
+  readField(stream, field);
 
   if constexpr (has_oldTimeRef<T>::value)
   {
