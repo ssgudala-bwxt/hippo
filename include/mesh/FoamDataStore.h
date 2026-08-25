@@ -299,6 +299,11 @@ dataStoreField(std::ostream & stream,
     {
       Foam::label ddt0TimeIndex{field.timeIndex()};
       storeHelper(stream, ddt0TimeIndex, nullptr);
+      // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+      mooseInfoRepeated("[CN-DDT0-STORE] name=" + name +
+                         " meshTimeIndex=" + std::to_string(field.mesh().time().timeIndex()) +
+                         " ddt0.timeIndex=" + std::to_string(ddt0TimeIndex) +
+                         " val0=" + std::to_string(internalFieldConst(field)[0]));
     }
   }
 
@@ -338,6 +343,12 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
       Foam::label ddt0TimeIndex;
       loadHelper(stream, ddt0TimeIndex, nullptr);
       field.timeIndex() = ddt0TimeIndex;
+      // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+      mooseInfoRepeated(
+          "[CN-DDT0-LOAD] name=" + field_name +
+          " meshTimeIndex=" + std::to_string(foam_mesh.time().timeIndex()) +
+          " ddt0.timeIndex=" + std::to_string(field.timeIndex()) +
+          " val0=" + std::to_string(internalFieldConst(field)[0]));
     }
   }
 
