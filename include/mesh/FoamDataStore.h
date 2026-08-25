@@ -61,6 +61,22 @@ struct has_clearOldTimes<T, std::void_t<decltype(std::declval<T &>().clearOldTim
 {
 };
 
+// Detects GeometricField's non-const timeIndex() accessor (returns Foam::label&).
+// This is the field's own bookkeeping index used e.g. by GeometricField::storeOldTimes()
+// to decide whether to auto-shift its old-time chain, and separately (for CrankNicolson's
+// "ddt0(...)" auxiliary fields specifically) by CrankNicolsonDdtScheme::evaluate() to decide
+// whether ddt0 needs to be recomputed for the current Foam::Time::timeIndex(). See
+// removeOldTime() and isDDt0Name() below for why this is only round-tripped for ddt0 fields.
+template <typename T, typename = void>
+struct has_timeIndex : std::false_type
+{
+};
+
+template <typename T>
+struct has_timeIndex<T, std::void_t<decltype(std::declval<T &>().timeIndex())>> : std::true_type
+{
+};
+
 template <typename T, typename = void>
 struct has_primitiveField : std::false_type
 {
@@ -124,6 +140,20 @@ isOldTimeName(const Foam::string & key)
     return false;
   const auto suffix = key.substr(pos + 1);
   return !suffix.empty() && suffix.find_first_not_of('0') == Foam::string::npos;
+}
+
+// Returns true if the given registry key is one of CrankNicolsonDdtScheme's
+// auxiliary "ddt0(...)" fields (e.g. "ddt0(T)", "ddt0(rho,U)"). These fields
+// store the previous timestep's time derivative and, unlike ordinary solved
+// fields, use their own timeIndex() purely as a "has this been advanced for
+// the current Foam::Time::timeIndex() yet" flag (CrankNicolsonDdtScheme::
+// evaluate()); they never build their own oldTime() chain, so restoring
+// timeIndex() for them (see dataStoreField/dataLoadField) cannot interfere
+// with GeometricField::storeOldTimes()'s unrelated use of the same member.
+inline bool
+isDDt0Name(const Foam::string & key)
+{
+  return key.starts_with("ddt0(");
 }
 
 template <typename T, bool strict>
@@ -255,6 +285,23 @@ dataStoreField(std::ostream & stream,
   storeHelper(stream, field_name, nullptr);
   writeField(stream, field);
 
+  // CrankNicolsonDdtScheme's "ddt0(...)" auxiliary fields track whether they
+  // have already been advanced for the current Foam::Time::timeIndex() via
+  // their own timeIndex(). Restoring only the field values on a fixed-point
+  // re-solve (without restoring this index) leaves it referring to the
+  // now-current timeIndex(), so CrankNicolsonDdtScheme::evaluate() sees no
+  // change and skips recomputing ddt0, silently reusing stale scheme state
+  // across fixed-point iterations. Store it here, alongside the values, so
+  // dataLoadField can put it back. See isDDt0Name()/has_timeIndex above.
+  if constexpr (has_timeIndex<T>::value)
+  {
+    if (isDDt0Name(name))
+    {
+      Foam::label ddt0TimeIndex{field.timeIndex()};
+      storeHelper(stream, ddt0TimeIndex, nullptr);
+    }
+  }
+
   field_list.insert(name);
   if constexpr (has_nOldTimes<T>::value && has_oldTime<T>::value)
   {
@@ -279,6 +326,20 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
   loadHelper(stream, field_name, nullptr);
   auto & field = foam_mesh.lookupObjectRef<T>(field_name);
   readField(stream, field);
+
+  // Restore the ddt0(...) timeIndex() written by dataStoreField, in the same
+  // order it was written, so CrankNicolsonDdtScheme::evaluate() recomputes
+  // ddt0 on the next access after this restore rather than reusing stale
+  // scheme state. See isDDt0Name()/has_timeIndex above.
+  if constexpr (has_timeIndex<T>::value)
+  {
+    if (isDDt0Name(field_name))
+    {
+      Foam::label ddt0TimeIndex;
+      loadHelper(stream, ddt0TimeIndex, nullptr);
+      field.timeIndex() = ddt0TimeIndex;
+    }
+  }
 
   if constexpr (has_oldTimeRef<T>::value)
   {
@@ -329,15 +390,29 @@ removeOldTime(Foam::fvMesh & mesh, T & field)
   // time step. In OpenFOAM, on the first timestep fvc::ddt calls return 0. However,
   // on the second fixed-point they don't unless the old time base field is cleared, but
   // this results in an internal OpenFOAM error for some time schemes.
+  //
+  // Specifically, CrankNicolsonDdtScheme registers its own "ddt0(...)" auxiliary fields
+  // in the mesh registry (see isDDt0Name()). Because these are ordinary GeometricFields
+  // (e.g. volScalarField) as far as the type system is concerned, they are picked up by
+  // this same loadFields()/removeOldTime() loop alongside the solved fields they derive
+  // from. Calling clearOldTimes() directly on a ddt0(...) field disrupts the internal
+  // state CrankNicolsonDdtScheme::evaluate()/coef_()/coef0_() expect it to hold, producing
+  // an internal OpenFOAM error, so ddt0(...) fields must be skipped here.
+  //
   // Schemes known to work:
   //   - Euler (implicit)
   // Schemes known not to work
   //   - Crank-Nicolson
-  // Current behaviour do not clear the old time base field for CN even though this would result in
-  // a small error compared to not using fixed-point. Potentially add warning.
+  // Current behaviour: do not clear the old time base field for ddt0(...) fields. The
+  // ddt0(...) field's own scheme state (its timeIndex()) is instead round-tripped through
+  // dataStoreField/dataLoadField so that CrankNicolsonDdtScheme::evaluate() correctly
+  // recomputes ddt0 on each fixed-point iteration rather than reusing stale state.
   if constexpr (has_clearOldTimes<T>::value)
   {
-    field.clearOldTimes();
+    if (!isDDt0Name(field.name()))
+    {
+      field.clearOldTimes();
+    }
   }
 }
 
