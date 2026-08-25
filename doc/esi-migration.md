@@ -13,6 +13,7 @@ The forks share a common ancestor but have diverged substantially in their C++ A
 
 Reference URLs used during the migration:
 - Foundation v12 C++ docs: https://cpp.openfoam.org/v12/
+- ESI repo: https://gitlab.com/openfoam/core/openfoam
 
 ---
 
