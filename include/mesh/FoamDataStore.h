@@ -34,19 +34,15 @@ struct has_oldTime : std::false_type
 {
 };
 
+// Detects GeometricField's 0-arg oldTime() accessor (both const and non-const overloads
+// exist in ESI OpenFOAM - there is no indexed oldTime(n)/oldTimeRef(n) API). The
+// non-const overload returns a writable T&, which dataLoadField needs in order to walk
+// down the old-time chain (field.oldTime().oldTime()...) and restore each level's own
+// timeIndex()/value directly, since each old-time level is itself a full GeometricField
+// with its own private timeIndex_ bookkeeping that is NOT round-tripped by restoring only
+// the top-level field's timeIndex()/value.
 template <typename T>
-struct has_oldTime<T, std::void_t<decltype(std::declval<T &>().oldTime(1))>> : std::true_type
-{
-};
-
-template <typename T, typename = void>
-struct has_oldTimeRef : std::false_type
-{
-};
-
-template <typename T>
-struct has_oldTimeRef<T, std::void_t<decltype(std::declval<T &>().oldTimeRef(1))>>
-  : std::true_type
+struct has_oldTime<T, std::void_t<decltype(std::declval<T &>().oldTime())>> : std::true_type
 {
 };
 
@@ -318,12 +314,36 @@ dataStoreField(std::ostream & stream,
   writeField(stream, field);
 
   field_list.insert(name);
+
+  // Each old-time level (T_0, T_0_0, ...) is itself a full GeometricField with its own
+  // private timeIndex_/field0Ptr_ bookkeeping, entirely separate from the top-level
+  // field's. ESI OpenFOAM has no indexed oldTime(n)/oldTimeRef(n) accessor, only the
+  // 0-arg oldTime() that lazily creates/returns the next level down, so walk the chain
+  // one level at a time via repeated oldTime() calls, storing each level's timeIndex()
+  // (if it has one) and value, symmetrically with dataLoadField below.
   if constexpr (has_nOldTimes<T>::value && has_oldTime<T>::value)
   {
+    T * level = &field;
     for (int n = 1; n <= nOldTimes; ++n)
     {
-      writeField(stream, field.oldTime(n));
-      field_list.insert(field.oldTime(n).name());
+      T & old_field = level->oldTime();
+      if constexpr (has_timeIndex<T>::value)
+      {
+        Foam::label oldTimeIndex{old_field.timeIndex()};
+        storeHelper(stream, oldTimeIndex, nullptr);
+        // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+        if (old_field.name() == "T_0" || old_field.name() == "T_0_0")
+        {
+          Foam::Info << "[CN-STORE] name=" << old_field.name()
+                     << " meshTimeIndex=" << old_field.mesh().time().timeIndex()
+                     << " field.timeIndex=" << oldTimeIndex
+                     << " field.mag[0]=" << Foam::mag(old_field.primitiveField()[0])
+                     << Foam::endl;
+        }
+      }
+      writeField(stream, old_field);
+      field_list.insert(old_field.name());
+      level = &old_field;
     }
   }
 }
@@ -383,12 +403,51 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
     }
   }
 
-  if constexpr (has_oldTimeRef<T>::value)
+  // Restore each old-time level's own timeIndex()/value, one level at a time, in the
+  // same order dataStoreField wrote them. field.oldTime() (non-const) returns a writable
+  // reference to the next level down (lazily creating it if needed, which is safe here
+  // since the top-level field's timeIndex() was JUST restored above to match
+  // Foam::Time::timeIndex() at the moment of this restore, before Foam::Time has been
+  // advanced for this fixed-point attempt - so this access cannot itself trigger a
+  // spurious storeOldTimes() shift). As with the top-level field, each level's own
+  // timeIndex() must be restored before its value is overwritten, for the same reason.
+  // Without this, an old-time level's own timeIndex_ is left at whatever an earlier,
+  // now-discarded fixed-point attempt set it to - "one step ahead" of the just-restored
+  // parent - so the next real ddt evaluation on the restored field spuriously re-shifts
+  // this level using its own stale (unrestored) value, corrupting deeper old-time levels.
+  if constexpr (has_oldTime<T>::value)
   {
-    for (int nOld = 1; nOld <= nOldTimes; ++nOld)
+    T * level = &field;
+    for (int n = 1; n <= nOldTimes; ++n)
     {
-      auto & old_field = field.oldTimeRef(nOld);
+      T & old_field = level->oldTime();
+      if constexpr (has_timeIndex<T>::value)
+      {
+        Foam::label oldTimeIndex;
+        loadHelper(stream, oldTimeIndex, nullptr);
+        old_field.timeIndex() = oldTimeIndex;
+        // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+        if (old_field.name() == "T_0" || old_field.name() == "T_0_0")
+        {
+          Foam::Info << "[CN-LOAD] name=" << old_field.name()
+                     << " meshTimeIndex=" << old_field.mesh().time().timeIndex()
+                     << " restored.timeIndex=" << oldTimeIndex
+                     << Foam::endl;
+        }
+      }
       readField(stream, old_field);
+      // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
+      if constexpr (has_timeIndex<T>::value)
+      {
+        if (old_field.name() == "T_0" || old_field.name() == "T_0_0")
+        {
+          Foam::Info << "[CN-LOAD-POSTREAD] name=" << old_field.name()
+                     << " field.timeIndex=" << old_field.timeIndex()
+                     << " field.mag[0]=" << Foam::mag(old_field.primitiveField()[0])
+                     << Foam::endl;
+        }
+      }
+      level = &old_field;
     }
   }
 }
