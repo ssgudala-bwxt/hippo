@@ -19,13 +19,16 @@ Reference URLs used during the migration:
 
 ## Known bugs / limitations (read this first)
 
-- **Crank-Nicolson temporal scheme causes real (non-roundoff) drift in
-  fixed-point/CN tests.** This is a genuine, documented, pre-existing
-  limitation — not something to "fix" by loosening tolerances. Tests using
-  `ddtSchemes { default CrankNicolson; }` combined with MOOSE fixed-point
-  iteration will also still emit a `mooseWarning` on the first time step
-  (`FoamDataStore.h`'s `removeOldTime()` only clears old times for Euler).
-  See item 13 and the fixed-point test items under 22/26 for details.
+- ~~Crank-Nicolson temporal scheme drift under fixed-point iteration~~ — **fixed**,
+  confirmed passing (`test/tests/fixed-point/ode_crank_nicolson` plus the full
+  `fixed-point`/`timesteppers` regression suites). Two independent bugs
+  combined to cause this: (1) `CrankNicolsonDdtScheme`'s auxiliary `ddt0(...)`
+  field's own `timeIndex()` wasn't round-tripped by the fixed-point
+  snapshot/restore, and (2) each old-time level (`T_0`, `T_0_0`, ...) is a
+  full `GeometricField` with its *own* private `timeIndex()`/value that was
+  never restored at all (dead code — see item 12). Both are now fixed in
+  `FoamDataStore.h`. CN and Euler behave identically under fixed-point
+  iteration; no known scheme-specific limitation remains.
 - **`foamCleanCase` and `foamRun` may not be on `PATH`** on a from-source ESI
   install (only the compiled solver binaries are guaranteed). Any new
   `run_test.sh`/`test.py` that shells out to these needs a manual-cleanup
@@ -44,10 +47,8 @@ Reference URLs used during the migration:
 - Small (roundoff-scale) numeric diffs between ESI and Foundation gold files
   are expected from the underlying OpenFOAM stack migration (different
   linear-solver iteration counts / floating-point op order) and are safe to
-  fix via loosened tolerances — **but only for non-CrankNicolson tests**;
-  always check `fvSchemes`'s `ddtSchemes` before loosening a tolerance, since
-  CN-related drift should be documented as an expected failure instead (see
-  first bullet above).
+  fix via loosened tolerances.
+
 
 ---
 
@@ -352,7 +353,7 @@ Applied in `loadFields<T>()`.
 
 ---
 
-## 12. `OldTimeBaseFieldType<T>` and `nullOldestTime()` — Foundation only
+## 12. `OldTimeBaseFieldType<T>` and `nullOldestTime()` — Foundation only, and the Crank-Nicolson fixed-point fix (fully resolved)
 
 ### Foundation behaviour
 ```cpp
@@ -365,22 +366,55 @@ otbf.nullOldestTime();
 Foundation exposed internal old-time field management through `OldTimeBaseFieldType<T>` and `nullOldestTime()`. These were used so that `fvc::ddt` calls correctly return zero on the first fixed-point iteration of the first time step.
 
 ### ESI behaviour
-Neither `OldTimeBaseFieldType` nor `nullOldestTime()` exist. Only the public `GeometricField::clearOldTimes()` is available (and it is in both Foundation and ESI).
+Neither `OldTimeBaseFieldType` nor `nullOldestTime()` exist. Only the public `GeometricField::clearOldTimes()` is available (and it is in both Foundation and ESI). `removeOldTime()` in `FoamDataStore.h` calls `field.clearOldTimes()` unconditionally (guarded only by `has_clearOldTimes<T>`, not by scheme) whenever `mesh.time().timeIndex() == 0`.
 
-### Fix — `include/mesh/FoamDataStore.h`
-The Foundation-specific block was replaced with the single call that is portable:
+### The Crank-Nicolson drift, and its actual root cause
+`CrankNicolsonDdtScheme` (`$FOAM_SRC/finiteVolume/finiteVolume/ddtSchemes/CrankNicolsonDdtScheme/`) is stateful in a way Euler is not. It registers an auxiliary field per solved variable in the mesh object registry, named `ddt0(<field>)` (e.g. `ddt0(T)`, `ddt0(rho,U)`), holding the previous timestep's time derivative. Every `fvmDdt`/`fvcDdt` call does:
 ```cpp
-if (scheme == "Euler") {
-    field.clearOldTimes();  // sufficient for Euler; CN will get a warning
+bool evaluate(DDt0Field<GeoField>& ddt0)
+{
+    bool evaluated = (ddt0.timeIndex() != mesh().time().timeIndex());
+    ddt0.timeIndex() = mesh().time().timeIndex();
+    return evaluated;
 }
 ```
-A `mooseDoOnce(mooseWarning(...))` was retained for non-Euler schemes to communicate the known limitation.
+`ddt0`'s `timeIndex()` here is `GeometricField`'s own bookkeeping member (`GeometricField.H`'s `label& timeIndex()`) — the same member the base class uses in `storeOldTimes()` to decide whether to auto-shift *its own* old-time chain. For `ddt0(...)` fields specifically, nothing ever calls `.oldTime()` on them, so that generic mechanism is inert; `CrankNicolsonDdtScheme::evaluate()` is the only thing that reads/writes it, purely as an "have I already advanced ddt0 for the current timestep?" flag.
+
+`FoamDataStore.h`'s `dataStoreField`/`dataLoadField` *did* capture `ddt0(...)`'s field values correctly (its name has no `_0`/`_00` suffix, so `isOldTimeName()` doesn't exclude it, and it's an `isA<volScalarField>` etc., so the type filter doesn't exclude it either) — but never captured `timeIndex()`. So on fixed-point iteration 2+ of the same timestep: the field values get restored to the pre-solve snapshot, but `timeIndex()` is left at whatever the first iteration set it to (the current `mesh.time().timeIndex()`). `evaluate()` then sees `ddt0.timeIndex() == mesh().time().timeIndex()` and returns `false`, so `ddt0` is **not** recomputed — CN silently reuses one-timestep-stale scheme state on every iteration after the first. This is the drift previously observed in `ode_crank_nicolson`.
+
+Separately, `removeOldTime()`'s `clearOldTimes()` call (at `mesh.time().timeIndex() == 0`) also applies to `ddt0(...)` fields, since they pass the same `getFieldkeys<T, false>` filter as ordinary solved fields of the same type. Calling `clearOldTimes()` directly on a `ddt0(...)` field corrupts the internal state `CrankNicolsonDdtScheme` expects it to hold — this was the "internal OpenFOAM error for some time schemes" previously noted.
+
+### Fix — `include/mesh/FoamDataStore.h` (round 1: `ddt0(...)`'s own `timeIndex()`)
+1. Added `isDDt0Name(key)` (`key.starts_with("ddt0(")`) and a `has_timeIndex<T>` SFINAE trait for `GeometricField`'s `timeIndex()` accessor.
+2. `dataStoreField`/`dataLoadField` now round-trip `timeIndex()` for `ddt0(...)` fields specifically, immediately after the field values, so `CrankNicolsonDdtScheme::evaluate()` sees the correct state on every fixed-point re-solve.
+3. `removeOldTime()` now skips `clearOldTimes()` for `ddt0(...)` fields (checked via `field.name()`), leaving `clearOldTimes()` applied only to ordinary solved fields as before.
+
+This fix is scoped deliberately narrowly to `ddt0(...)`-named fields: restoring `timeIndex()` for ordinary solved fields (`T`, `U`, `p`, ...) would corrupt `GeometricField::storeOldTimes()`'s own use of the same member (it auto-shifts a field's old-time chain when `timeIndex() != mesh.time().timeIndex()`), causing spurious double old-time shifts on iteration 2+. `ddt0(...)` fields never have their own old-time chain (`.oldTime()` is never called on them), so this generic mechanism is inert for them and restoring `timeIndex()` is safe only in that specific case.
+
+### Round 2: old-time levels (`T_0`, `T_0_0`, ...) were never restored either
+
+Round 1 fixed `ddt0(...)`'s own recompute flag, but a second, deeper bug remained: `T`'s own old-time chain (`T_0`, `T_0_0`, ...) is a chain of *full* `GeometricField` objects, each with its own private `timeIndex_`/`field0Ptr_` bookkeeping, entirely separate from the top-level field's. hippo's old traits, `has_oldTime<T>`/`has_oldTimeRef<T>`, checked for an indexed `oldTime(label n)`/`oldTimeRef(label n)` accessor — an API that **does not exist anywhere in ESI OpenFOAM** (only Foundation ever had it; ESI only exposes the 0-arg `oldTime()`, both const and non-const overloads). This meant the "restore each old-time level" branch in `dataStoreField`/`dataLoadField` was permanently dead code: `T_0`/`T_0_0` were never independently serialised or restored across a fixed-point iteration at all.
+
+The corruption mechanism: `GeometricField::storeOldTime()` cascades `field0Ptr_->timeIndex_ = timeIndex_` (child's timeIndex = parent's *pre-bump* timeIndex) whenever `storeOldTimes()`'s gate fires. In a normal forward-marching run this only fires once per real timestep. But because our restore only ever reset the top-level field's `timeIndex()`/value, after fixed-point iteration 0 of a timestep, `T_0`'s in-memory state already reflected iteration 0's post-solve shift. When iteration 1 (post-restore) called `T.oldTime()` again — since the restored top-level `timeIndex()` no longer matched the mesh's re-advanced `timeIndex()` — the cascade fired a *second* time using `T_0`'s stale, unrestored value, overwriting `T_0_0` with it and making `T_0_0 == T_0` numerically. `CrankNicolsonDdtScheme`'s `ddt0 = rDtCoef0*(T_0 - T_0_0) - offCentre(...)` formula then collapsed to zero on every iteration after the first, exactly matching the drift previously observed.
+
+### Fix — `include/mesh/FoamDataStore.h` (round 2: old-time levels)
+1. Rewrote `has_oldTime<T>` to detect ESI's real 0-arg `oldTime()` accessor; removed `has_oldTimeRef<T>` entirely (it detected nothing in ESI).
+2. `dataStoreField<T>`/`dataLoadField<T>` now walk the old-time chain one level at a time via repeated `oldTime()` calls (`nOldTimes()` deep), storing/restoring each level's own `timeIndex()` — **before** its value, for the same reason as the top-level field (see above) — then its data, symmetrically in both directions.
+3. Confirmed no double-processing conflict with the top-level registry sweep: `getFieldkeys<T,strict>()`'s `isOldTimeName()` filter already excludes names like `T_0`/`T_0_0` (anything with a numeric-only suffix after the last `_`) from the top-level `storeFields`/`loadFields` sweep, so these levels are *only* ever reached via the new nested loop inside `dataStoreField("T", ...)`/`dataLoadField("T", ...)`, never independently.
+
+With both rounds applied, CN and Euler now behave identically under fixed-point iteration — confirmed via `test/tests/fixed-point/ode_crank_nicolson` (`test_analytical` and `test_times` both pass) and the full `fixed-point`/`timesteppers` regression suites (no regressions from activating this previously-dead old-time-level serialization path for every field with an old-time chain, not just `T` in this one test).
 
 ---
 
 ## 13. `mesh.schemes().ddt(name)` — status in ESI
 
-The call `mesh.schemes().ddt("ddt(field)")` used in `removeOldTime()` to look up the temporal discretisation scheme is present in both Foundation and ESI (`fvSchemes` inherits from `schemesLookup` in both forks). **No change required.**
+The call `mesh.schemes().ddt("ddt(field)")` to look up a field's temporal
+discretisation scheme is present in both Foundation and ESI (`fvSchemes`
+inherits from `schemesLookup` in both forks), so it remains available if
+needed. **Note:** earlier revisions of this document claimed
+`removeOldTime()` used this call to gate a Euler-only code path; the current
+`FoamDataStore.h` does not call it at all — see item 12 for what
+`removeOldTime()` actually does and the real fix for the Crank-Nicolson case.
 
 ---
 
@@ -869,7 +903,18 @@ these fixes.
 
 2. **HippoSolver migration guide for users.** Any application that previously subclassed `Foam::solver` must be updated to subclass `Hippo::HippoSolver` and call `FoamProblem::registerHippoSolver(std::make_unique<MyHippoSolver>(…))` before the first time step. Alternatively, if an ESI `Foam::solver` module already implements the desired physics (e.g. `solid`, `fluid`), just set the controlDict `solver` entry — `FoamSolverAdapter` will auto-register it with no C++ changes required.
 
-3. **Crank-Nicolson temporal scheme.** The `removeOldTime()` logic in `FoamDataStore.h` now only clears old times for the Euler scheme (same as before). Crank-Nicolson will still emit a `mooseWarning` on the first time step. This is a pre-existing limitation, not a regression.
+3. ~~Crank-Nicolson temporal scheme~~ — **fully fixed and confirmed passing.**
+   Two bugs combined to cause the previously-observed drift: (1)
+   `FoamDataStore.h`'s fixed-point snapshot/restore did not round-trip
+   `CrankNicolsonDdtScheme`'s auxiliary `ddt0(...)` field's own `timeIndex()`,
+   and `removeOldTime()`'s `clearOldTimes()` call also corrupted `ddt0(...)`
+   fields directly; (2) each old-time level (`T_0`, `T_0_0`, ...) is a full
+   `GeometricField` with its own private `timeIndex()`/value that was never
+   restored at all, due to traits checking a nonexistent ESI API (dead code).
+   Both are now fixed (see item 12 for the full writeup). CN and Euler behave
+   identically under fixed-point iteration — confirmed via
+   `test/tests/fixed-point/ode_crank_nicolson` and the full `fixed-point`/
+   `timesteppers` regression suites.
 
 
 ---
@@ -1330,10 +1375,9 @@ migrating the underlying OpenFOAM stack (different linear-solver iteration
 counts / floating-point operation order, not a physical regression) and were
 resolved by loosening exodiff/`test.py` (`np.testing.assert_allclose`)
 tolerances rather than treated as failures — but only after confirming via
-`fvSchemes`'s `ddtSchemes` that the test does **not** use `CrankNicolson`
-(which has its own documented, non-loosenable drift — see the fixed-point CN
-items elsewhere in this doc); Euler-scheme tests' diffs are pure roundoff and
-safe to loosen.
+`fvSchemes`'s `ddtSchemes` that the diffs weren't masking a real scheme bug
+(see the fixed-point CN fix, item 12, now fully resolved); Euler-scheme
+tests' diffs are pure roundoff and safe to loosen.
 
 ### 26.3 `foamCleanCase` / `foamRun` not on `PATH`
 
