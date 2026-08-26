@@ -305,7 +305,7 @@ dataStoreField(std::ostream & stream,
     Foam::label fieldTimeIndex{field.timeIndex()};
     storeHelper(stream, fieldTimeIndex, nullptr);
     // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
-    if (name.find("ddt0") != Foam::string::npos)
+    if (name == "T" || name == "T_0" || name == "T_0_0" || name.find("ddt0") != Foam::string::npos)
     {
       Foam::Info << "[CN-STORE] name=" << name
                  << " meshTimeIndex=" << field.mesh().time().timeIndex()
@@ -358,7 +358,8 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
     loadHelper(stream, fieldTimeIndex, nullptr);
     field.timeIndex() = fieldTimeIndex;
     // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
-    if (field_name.find("ddt0") != std::string::npos)
+    if (field_name == "T" || field_name == "T_0" || field_name == "T_0_0" ||
+        field_name.find("ddt0") != std::string::npos)
     {
       Foam::Info << "[CN-LOAD] name=" << field_name
                  << " meshTimeIndex=" << field.mesh().time().timeIndex()
@@ -372,7 +373,8 @@ dataLoadField(std::istream & stream, Foam::fvMesh & foam_mesh)
   // TEMPORARY DEBUG - remove once CN fixed-point behaviour is confirmed.
   if constexpr (has_timeIndex<T>::value)
   {
-    if (field_name.find("ddt0") != std::string::npos)
+    if (field_name == "T" || field_name == "T_0" || field_name == "T_0_0" ||
+        field_name.find("ddt0") != std::string::npos)
     {
       Foam::Info << "[CN-LOAD-POSTREAD] name=" << field_name
                  << " field.timeIndex=" << field.timeIndex()
